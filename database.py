@@ -325,7 +325,6 @@ def get_next_profile(
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
-                  AND city = ?
                   AND age BETWEEN ? AND ?
 
                   AND telegram_id NOT IN (
@@ -334,15 +333,21 @@ def get_next_profile(
                       WHERE viewer_id = ?
                   )
 
-                ORDER BY RANDOM()
+                ORDER BY
+                    CASE
+                        WHEN city = ? THEN 0
+                        ELSE 1
+                    END,
+                    RANDOM()
+
                 LIMIT 1
                 """,
                 (
                     telegram_id,
-                    city,
                     age_min,
                     age_max,
                     telegram_id,
+                    city,
                 )
             ).fetchone()
 
@@ -352,7 +357,6 @@ def get_next_profile(
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
-                  AND city = ?
                   AND gender = ?
                   AND age BETWEEN ? AND ?
 
@@ -362,16 +366,22 @@ def get_next_profile(
                       WHERE viewer_id = ?
                   )
 
-                ORDER BY RANDOM()
+                ORDER BY
+                    CASE
+                        WHEN city = ? THEN 0
+                        ELSE 1
+                    END,
+                    RANDOM()
+
                 LIMIT 1
                 """,
                 (
                     telegram_id,
-                    city,
                     search_gender,
                     age_min,
                     age_max,
                     telegram_id,
+                    city,
                 )
             ).fetchone()
 
