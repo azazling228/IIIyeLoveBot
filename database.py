@@ -248,6 +248,42 @@ def create_user(
 
 
 # ==========================================
+# ОБНОВИТЬ НАСТРОЙКИ ПОИСКА
+# ==========================================
+
+def update_search_settings(
+    telegram_id,
+    search_gender,
+    search_age_min,
+    search_age_max
+):
+    connection = get_connection()
+
+    try:
+        connection.execute(
+            """
+            UPDATE users
+            SET
+                search_gender = ?,
+                search_age_min = ?,
+                search_age_max = ?
+            WHERE telegram_id = ?
+            """,
+            (
+                search_gender,
+                search_age_min,
+                search_age_max,
+                telegram_id,
+            )
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
+
+
+# ==========================================
 # ПОИСК АНКЕТ
 # ==========================================
 
@@ -267,15 +303,19 @@ def find_profiles(
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
-                  AND city = ?
                   AND age BETWEEN ? AND ?
-                ORDER BY RANDOM()
+                ORDER BY
+                    CASE
+                        WHEN city = ? THEN 0
+                        ELSE 1
+                    END,
+                    RANDOM()
                 """,
                 (
                     telegram_id,
-                    city,
                     age_min,
                     age_max,
+                    city,
                 )
             ).fetchall()
 
@@ -285,17 +325,21 @@ def find_profiles(
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
-                  AND city = ?
                   AND gender = ?
                   AND age BETWEEN ? AND ?
-                ORDER BY RANDOM()
+                ORDER BY
+                    CASE
+                        WHEN city = ? THEN 0
+                        ELSE 1
+                    END,
+                    RANDOM()
                 """,
                 (
                     telegram_id,
-                    city,
                     search_gender,
                     age_min,
                     age_max,
+                    city,
                 )
             ).fetchall()
 
@@ -514,9 +558,6 @@ def create_match(
 ):
     if user_one == user_two:
         return False
-
-    # Всегда храним пользователей
-    # в одинаковом порядке.
 
     if user_one > user_two:
         user_one, user_two = user_two, user_one
@@ -819,7 +860,7 @@ def delete_user(
         )
 
         # --------------------------------------
-        # УДАЛЯЕМ МЭТЧИ
+        # НАХОДИМ МЭТЧИ
         # --------------------------------------
 
         match_ids = connection.execute(
@@ -835,6 +876,10 @@ def delete_user(
             )
         ).fetchall()
 
+        # --------------------------------------
+        # УДАЛЯЕМ СООБЩЕНИЯ МЭТЧЕЙ
+        # --------------------------------------
+
         for match in match_ids:
             connection.execute(
                 """
@@ -845,6 +890,10 @@ def delete_user(
                     match["id"],
                 )
             )
+
+        # --------------------------------------
+        # УДАЛЯЕМ МЭТЧИ
+        # --------------------------------------
 
         connection.execute(
             """

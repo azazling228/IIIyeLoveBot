@@ -14,7 +14,6 @@ from aiogram.types import (
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    ReplyKeyboardRemove,
 )
 
 from database import (
@@ -24,6 +23,7 @@ from database import (
     get_next_profile,
     add_view,
     add_like,
+    has_like,
     is_mutual_like,
     create_match,
     get_matches,
@@ -31,6 +31,7 @@ from database import (
     add_message,
     delete_user,
     get_connection,
+    update_search_settings,
 )
 
 
@@ -67,6 +68,11 @@ class Registration(StatesGroup):
     photo = State()
 
     edit_name = State()
+
+    # Настройки поиска
+    settings_gender = State()
+    settings_age_min = State()
+    settings_age_max = State()
 
 
 class ChatState(StatesGroup):
@@ -149,6 +155,7 @@ def create_profile_keyboard(profile_id):
         ]
     )
 
+
 def create_like_back_keyboard(profile_id):
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -166,6 +173,7 @@ def create_like_back_keyboard(profile_id):
             ],
         ]
     )
+
 
 def create_my_profile_keyboard():
     return InlineKeyboardMarkup(
@@ -203,26 +211,13 @@ def create_delete_confirm_keyboard():
     )
 
 
-def create_match_keyboard(other_user_id):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💬 Написать сообщение",
-                    callback_data=f"chat_{other_user_id}",
-                )
-            ]
-        ]
-    )
-
-
 def create_match_action_keyboard(profile_id):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="💬 Написать",
-                    callback_data=f"open_chat_{profile_id}",
+                    callback_data=f"chat_{profile_id}",
                 ),
             ],
             [
@@ -233,6 +228,7 @@ def create_match_action_keyboard(profile_id):
             ],
         ]
     )
+
 
 # ==========================================
 # /START
@@ -693,11 +689,14 @@ async def show_next_profile(
 
 
 # ==========================================
-# ПРОПУСТИТЬ
+# ПРОПУСТИТЬ АНКЕТУ
 # ==========================================
 
 @dp.callback_query(
-    lambda callback: callback.data.startswith("skip_")
+    lambda callback: (
+        callback.data.startswith("skip_")
+        and not callback.data.startswith("skip_like_")
+    )
 )
 async def skip_profile(
     callback: CallbackQuery,
@@ -727,20 +726,20 @@ async def skip_profile(
 
 
 # ==========================================
-# ЛАЙК
+# ЛАЙКНУТЬ В ОТВЕТ
 # ==========================================
 
 @dp.callback_query(
-    lambda callback: callback.data.startswith("like_")
+    lambda callback: callback.data.startswith("like_back_")
 )
-async def like_profile(
+async def like_back(
     callback: CallbackQuery,
 ):
     try:
         profile_id = int(
-            callback.data.split("_")[1]
+            callback.data.replace("like_back_", "")
         )
-    except (IndexError, ValueError):
+    except ValueError:
         await callback.answer(
             "Ошибка анкеты."
         )
@@ -756,7 +755,168 @@ async def like_profile(
         )
         return
 
-    profile = get_user(profile_id)
+    profile = get_user(
+        profile_id
+    )
+
+    if not profile:
+        await callback.answer(
+            "Эта анкета больше недоступна."
+        )
+        return
+
+    if profile_id == user["telegram_id"]:
+        await callback.answer(
+            "Нельзя лайкнуть самого себя 😄"
+        )
+        return
+
+    # Проверяем, что этот пользователь
+    # действительно ранее поставил нам лайк.
+    if not has_like(
+        profile_id,
+        user["telegram_id"],
+    ):
+        await callback.answer(
+            "Этот лайк уже недоступен."
+        )
+        return
+
+    add_like(
+        from_user=user["telegram_id"],
+        to_user=profile_id,
+    )
+
+    new_match = create_match(
+        user_one=user["telegram_id"],
+        user_two=profile_id,
+    )
+
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=None
+        )
+    except Exception:
+        pass
+
+    await callback.answer(
+        "💘 Взаимная симпатия!"
+    )
+
+    await callback.message.answer(
+        "💘 МЭТЧ!\n\n"
+        f"Вы понравились друг другу с "
+        f"{profile['name']}! ❤️\n\n"
+        "Теперь можно начать общаться.",
+        reply_markup=create_match_action_keyboard(
+            profile_id
+        ),
+    )
+
+    # Уведомляем второго пользователя только
+    # при создании нового мэтча.
+    if new_match:
+        try:
+            match_text = (
+                "💘 МЭТЧ!\n\n"
+                f"Ты понравился(ась) "
+                f"{user['name']}! ❤️\n\n"
+                "Вы понравились друг другу.\n"
+                "Теперь можно начать общаться."
+            )
+
+            if user["photo_file_id"]:
+                await bot.send_photo(
+                    chat_id=profile_id,
+                    photo=user["photo_file_id"],
+                    caption=match_text,
+                    reply_markup=create_match_action_keyboard(
+                        user["telegram_id"]
+                    ),
+                )
+            else:
+                await bot.send_message(
+                    chat_id=profile_id,
+                    text=match_text,
+                    reply_markup=create_match_action_keyboard(
+                        user["telegram_id"]
+                    ),
+                )
+
+        except Exception:
+            pass
+
+
+# ==========================================
+# ПРОПУСТИТЬ ПОЛУЧЕННЫЙ ЛАЙК
+# ==========================================
+
+@dp.callback_query(
+    lambda callback: callback.data.startswith("skip_like_")
+)
+async def skip_received_like(
+    callback: CallbackQuery,
+):
+    try:
+        profile_id = int(
+            callback.data.replace("skip_like_", "")
+        )
+    except ValueError:
+        await callback.answer(
+            "Ошибка анкеты."
+        )
+        return
+
+    # Сейчас просто убираем кнопки.
+    # Сам лайк не удаляем.
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=None
+        )
+    except Exception:
+        pass
+
+    await callback.answer(
+        "Лайк пропущен ❌"
+    )
+
+
+# ==========================================
+# ЛАЙК
+# ==========================================
+
+@dp.callback_query(
+    lambda callback: (
+        callback.data.startswith("like_")
+        and not callback.data.startswith("like_back_")
+    )
+)
+async def like_profile(
+    callback: CallbackQuery,
+):
+    try:
+        profile_id = int(
+            callback.data.replace("like_", "")
+        )
+    except ValueError:
+        await callback.answer(
+            "Ошибка анкеты."
+        )
+        return
+
+    user = get_user(
+        callback.from_user.id
+    )
+
+    if not user:
+        await callback.answer(
+            "Сначала создай анкету."
+        )
+        return
+
+    profile = get_user(
+        profile_id
+    )
 
     if not profile:
         await callback.answer(
@@ -800,8 +960,6 @@ async def like_profile(
     # ======================================
 
     if mutual:
-        from database import create_match
-
         new_match = create_match(
             user_one=user["telegram_id"],
             user_two=profile_id,
@@ -827,17 +985,19 @@ async def like_profile(
 
         if new_match:
             try:
-                if profile["photo_file_id"]:
+                match_text = (
+                    "💘 МЭТЧ!\n\n"
+                    f"Ты понравился(ась) "
+                    f"{user['name']}! ❤️\n\n"
+                    "Вы понравились друг другу.\n"
+                    "Теперь можно начать общаться."
+                )
+
+                if user["photo_file_id"]:
                     await bot.send_photo(
                         chat_id=profile_id,
-                        photo=profile["photo_file_id"],
-                        caption=(
-                            "💘 МЭТЧ!\n\n"
-                            f"Ты понравился(ась) "
-                            f"{user['name']}! ❤️\n\n"
-                            "Вы понравились друг другу.\n"
-                            "Теперь можно начать общаться."
-                        ),
+                        photo=user["photo_file_id"],
+                        caption=match_text,
                         reply_markup=create_match_action_keyboard(
                             user["telegram_id"]
                         ),
@@ -845,13 +1005,7 @@ async def like_profile(
                 else:
                     await bot.send_message(
                         chat_id=profile_id,
-                        text=(
-                            "💘 МЭТЧ!\n\n"
-                            f"Ты понравился(ась) "
-                            f"{user['name']}! ❤️\n\n"
-                            "Вы понравились друг другу.\n"
-                            "Теперь можно начать общаться."
-                        ),
+                        text=match_text,
                         reply_markup=create_match_action_keyboard(
                             user["telegram_id"]
                         ),
@@ -1007,9 +1161,9 @@ async def open_chat(
 ):
     try:
         other_user_id = int(
-            callback.data.split("_")[1]
+            callback.data.replace("chat_", "")
         )
-    except (IndexError, ValueError):
+    except ValueError:
         await callback.answer(
             "Ошибка чата."
         )
@@ -1081,10 +1235,6 @@ async def send_chat_message(
     message: Message,
     state: FSMContext,
 ):
-    # --------------------------------------
-    # ВЫХОД ИЗ ЧАТА
-    # --------------------------------------
-
     if message.text == "↩️ Выйти из чата":
         data = await state.get_data()
 
@@ -1102,10 +1252,6 @@ async def send_chat_message(
         )
 
         return
-
-    # --------------------------------------
-    # В ЧАТ ПОКА ПРИНИМАЕМ ТОЛЬКО ТЕКСТ
-    # --------------------------------------
 
     if not message.text:
         await message.answer(
@@ -1145,10 +1291,6 @@ async def send_chat_message(
 
         return
 
-    # --------------------------------------
-    # ПРОВЕРЯЕМ МЭТЧ
-    # --------------------------------------
-
     match = get_match(
         message.from_user.id,
         partner_id,
@@ -1164,20 +1306,12 @@ async def send_chat_message(
 
         return
 
-    # --------------------------------------
-    # СОХРАНЯЕМ СООБЩЕНИЕ
-    # --------------------------------------
-
     add_message(
         match_id=match_id,
         sender_id=message.from_user.id,
         receiver_id=partner_id,
         text=text,
     )
-
-    # --------------------------------------
-    # ОТПРАВЛЯЕМ ПОЛУЧАТЕЛЮ
-    # --------------------------------------
 
     try:
         await bot.send_message(
@@ -1355,10 +1489,6 @@ async def delete_profile_confirm(
     await callback.answer()
 
 
-# ==========================================
-# ОТМЕНА УДАЛЕНИЯ
-# ==========================================
-
 @dp.callback_query(
     lambda callback: callback.data == "delete_profile_no"
 )
@@ -1373,10 +1503,6 @@ async def delete_profile_no(
         "Удаление отменено"
     )
 
-
-# ==========================================
-# ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ
-# ==========================================
 
 @dp.callback_query(
     lambda callback: callback.data == "delete_profile_yes"
@@ -1440,15 +1566,228 @@ async def delete_profile_yes(
 )
 async def search_settings(
     message: Message,
+    state: FSMContext,
 ):
+    user = get_user(
+        message.from_user.id
+    )
+
+    if not user:
+        await message.answer(
+            "Сначала создай анкету.\n\n"
+            "Напиши /start"
+        )
+        return
+
+    gender_names = {
+        "male": "👨 Парни",
+        "female": "👩 Девушки",
+        "all": "❤️ Все",
+    }
+
+    current_gender = gender_names.get(
+        user["search_gender"],
+        "Не указано",
+    )
+
+    await state.set_state(
+        Registration.settings_gender
+    )
+
     await message.answer(
         "⚙️ Настройки поиска\n\n"
-        "Пока этот раздел находится в разработке.\n\n"
-        "Скоро здесь можно будет изменить:\n"
-        "• кого искать;\n"
-        "• минимальный возраст;\n"
-        "• максимальный возраст;\n"
-        "• город."
+        f"Сейчас ищем: {current_gender}\n"
+        f"Возраст: {user['search_age_min']}–"
+        f"{user['search_age_max']} лет\n"
+        f"Город: {user['city']}\n\n"
+        "Кого хочешь искать?",
+        reply_markup=search_gender_keyboard,
+    )
+
+
+# ==========================================
+# НАСТРОЙКИ — ПОЛ
+# ==========================================
+
+@dp.message(Registration.settings_gender)
+async def settings_gender(
+    message: Message,
+    state: FSMContext,
+):
+    options = {
+        "👨 Парни": "male",
+        "👩 Девушки": "female",
+        "❤️ Все": "all",
+    }
+
+    if message.text not in options:
+        await message.answer(
+            "Выбери вариант кнопкой.",
+            reply_markup=search_gender_keyboard,
+        )
+        return
+
+    await state.update_data(
+        settings_gender=options[message.text]
+    )
+
+    await state.set_state(
+        Registration.settings_age_min
+    )
+
+    user = get_user(
+        message.from_user.id
+    )
+
+    await message.answer(
+        "🎂 От какого возраста искать?\n\n"
+        f"Сейчас: {user['search_age_min']} лет\n\n"
+        "Напиши новый минимальный возраст "
+        "от 18 до 100."
+    )
+
+
+# ==========================================
+# НАСТРОЙКИ — МИНИМАЛЬНЫЙ ВОЗРАСТ
+# ==========================================
+
+@dp.message(Registration.settings_age_min)
+async def settings_age_min(
+    message: Message,
+    state: FSMContext,
+):
+    if not message.text:
+        await message.answer(
+            "Напиши возраст числом.\n"
+            "Например: 18"
+        )
+        return
+
+    try:
+        age_min = int(message.text)
+    except ValueError:
+        await message.answer(
+            "Напиши возраст числом.\n"
+            "Например: 18"
+        )
+        return
+
+    if age_min < 18 or age_min > 100:
+        await message.answer(
+            "Возраст должен быть от 18 до 100."
+        )
+        return
+
+    await state.update_data(
+        settings_age_min=age_min
+    )
+
+    await state.set_state(
+        Registration.settings_age_max
+    )
+
+    user = get_user(
+        message.from_user.id
+    )
+
+    await message.answer(
+        "🎂 До какого возраста искать?\n\n"
+        f"Сейчас: {user['search_age_max']} лет\n\n"
+        "Напиши новый максимальный возраст "
+        "от 18 до 100."
+    )
+
+
+# ==========================================
+# НАСТРОЙКИ — МАКСИМАЛЬНЫЙ ВОЗРАСТ
+# ==========================================
+
+@dp.message(Registration.settings_age_max)
+async def settings_age_max(
+    message: Message,
+    state: FSMContext,
+):
+    if not message.text:
+        await message.answer(
+            "Напиши возраст числом.\n"
+            "Например: 30"
+        )
+        return
+
+    try:
+        age_max = int(message.text)
+    except ValueError:
+        await message.answer(
+            "Напиши возраст числом.\n"
+            "Например: 30"
+        )
+        return
+
+    if age_max < 18 or age_max > 100:
+        await message.answer(
+            "Возраст должен быть от 18 до 100."
+        )
+        return
+
+    data = await state.get_data()
+
+    age_min = data.get(
+        "settings_age_min"
+    )
+
+    if age_min is None:
+        await state.clear()
+
+        await message.answer(
+            "Произошла ошибка настроек.\n"
+            "Открой настройки поиска ещё раз.",
+            reply_markup=main_keyboard,
+        )
+        return
+
+    if age_max < age_min:
+        await message.answer(
+            f"Максимальный возраст не может быть "
+            f"меньше минимального ({age_min})."
+        )
+        return
+
+    search_gender = data.get(
+        "settings_gender"
+    )
+
+    if not search_gender:
+        await state.clear()
+
+        await message.answer(
+            "Произошла ошибка настроек.\n"
+            "Открой настройки поиска ещё раз.",
+            reply_markup=main_keyboard,
+        )
+        return
+
+    update_search_settings(
+        telegram_id=message.from_user.id,
+        search_gender=search_gender,
+        search_age_min=age_min,
+        search_age_max=age_max,
+    )
+
+    await state.clear()
+
+    gender_names = {
+        "male": "👨 Парни",
+        "female": "👩 Девушки",
+        "all": "❤️ Все",
+    }
+
+    await message.answer(
+        "✅ Настройки поиска сохранены!\n\n"
+        f"🔎 Ищем: {gender_names[search_gender]}\n"
+        f"🎂 Возраст: {age_min}–{age_max} лет\n\n"
+        "Теперь новые анкеты будут подбираться "
+        "по этим настройкам.",
+        reply_markup=main_keyboard,
     )
 
 
