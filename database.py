@@ -1,6 +1,8 @@
+import os
 import sqlite3
 
-DATABASE_NAME = "dating.db"
+os.makedirs("/app/data", exist_ok=True)
+DATABASE_NAME = "/app/data/dating.db"
 
 # ==========================================
 # ПОДКЛЮЧЕНИЕ К БАЗЕ
