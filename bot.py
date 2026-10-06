@@ -2,7 +2,7 @@ import asyncio
 import os
 import random
 from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -46,6 +46,9 @@ if not BOT_TOKEN:
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+def limit_caption(text, max_length=1024):
+    return text[:max_length]
 
 # ==========================================
 # СОСТОЯНИЯ
@@ -584,7 +587,6 @@ async def registration_photo(
         search_age_min=data["search_age_min"],
         search_age_max=data["search_age_max"],
         photo_file_id=data["photo_file_id"],
-        description=data.get("description", ""),
     )
     await state.clear()
     await message.answer(
@@ -600,7 +602,9 @@ async def registration_photo(
 # ЗНАКОМСТВА
 # ==========================================
 
-@dp.message(lambda message: message.text == "💘 Знакомства")
+@dp.message(
+    lambda message: message.text == "💘 Знакомства"
+)
 async def start_dating(message: Message):
     user = get_user(message.from_user.id)
     if not user:
@@ -635,13 +639,11 @@ async def show_next_profile(message: Message, user):
         f"🎂 {profile['age']} лет\n"
         f"📍 {profile['city']}"
     )
-    if profile["description"]:
-        caption += f"\n\n📝 {profile['description']}"
     keyboard = create_profile_keyboard(profile["telegram_id"])
     if profile["photo_file_id"]:
         await message.answer_photo(
             photo=profile["photo_file_id"],
-            caption=caption,
+            caption=limit_caption(caption),
             reply_markup=keyboard,
         )
     else:
@@ -735,7 +737,7 @@ async def like_back(callback: CallbackQuery):
                 await bot.send_photo(
                     chat_id=profile_id,
                     photo=user["photo_file_id"],
-                    caption=match_text,
+                    caption=limit_caption(match_text),
                     reply_markup=create_match_action_keyboard(
                         user["telegram_id"]
                     ),
@@ -849,7 +851,7 @@ async def like_profile(callback: CallbackQuery):
                     await bot.send_photo(
                         chat_id=profile_id,
                         photo=user["photo_file_id"],
-                        caption=match_text,
+                        caption=limit_caption(match_text),
                         reply_markup=create_match_action_keyboard(
                             user["telegram_id"]
                         ),
@@ -885,7 +887,7 @@ async def like_profile(callback: CallbackQuery):
                 await bot.send_photo(
                     chat_id=profile_id,
                     photo=user["photo_file_id"],
-                    caption=like_caption,
+                    caption=limit_caption(like_caption),
                     reply_markup=create_like_back_keyboard(
                         user["telegram_id"]
                     ),
@@ -909,7 +911,9 @@ async def like_profile(callback: CallbackQuery):
 # МОИ МЭТЧИ
 # ==========================================
 
-@dp.message(lambda message: message.text == "💞 Мои мэтчи")
+@dp.message(
+    lambda message: message.text == "💞 Мои мэтчи"
+)
 async def my_matches(message: Message):
     user = get_user(message.from_user.id)
     if not user:
@@ -946,22 +950,23 @@ async def my_matches(message: Message):
                 ]
             ]
         )
-        caption = (
-            f"💘 {match['name']}\n"
-            f"🎂 {match['age']} лет\n"
-            f"📍 {match['city']}"
-        )
-        if match["description"]:
-            caption += f"\n\n📝 {match['description']}"
         if match["photo_file_id"]:
             await message.answer_photo(
                 photo=match["photo_file_id"],
-                caption=caption,
+                caption=(
+                    f"💘 {match['name']}\n"
+                    f"🎂 {match['age']} лет\n"
+                    f"📍 {match['city']}"
+                ),
                 reply_markup=keyboard,
             )
         else:
             await message.answer(
-                caption,
+                (
+                    f"💘 {match['name']}\n"
+                    f"🎂 {match['age']} лет\n"
+                    f"📍 {match['city']}"
+                ),
                 reply_markup=keyboard,
             )
 
@@ -1100,7 +1105,9 @@ async def send_chat_message(
 # МОЯ АНКЕТА
 # ==========================================
 
-@dp.message(lambda message: message.text == "👤 Моя анкета")
+@dp.message(
+    lambda message: message.text == "👤 Моя анкета"
+)
 async def my_profile(message: Message):
     user = get_user(message.from_user.id)
     if not user:
@@ -1115,13 +1122,11 @@ async def my_profile(message: Message):
         f"Возраст: {user['age']}\n"
         f"Город: {user['city']}"
     )
-    if user["description"]:
-        caption += f"\n\n📝 О себе: {user['description']}"
     keyboard = create_my_profile_keyboard()
     if user["photo_file_id"]:
         await message.answer_photo(
             photo=user["photo_file_id"],
-            caption=caption,
+            caption=limit_caption(caption),
             reply_markup=keyboard,
         )
     else:
