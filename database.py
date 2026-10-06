@@ -2,7 +2,7 @@ import os
 import sqlite3
 
 os.makedirs("/app/data", exist_ok=True)
-DATABASE_NAME = "/app/data/dating.db"
+DATABASE_NAME = "/app/data/dating (4).db"
 
 # ==========================================
 # ПОДКЛЮЧЕНИЕ К БАЗЕ
