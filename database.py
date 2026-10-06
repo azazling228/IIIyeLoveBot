@@ -32,7 +32,8 @@ def init_database():
                 search_gender TEXT NOT NULL,
                 search_age_min INTEGER NOT NULL,
                 search_age_max INTEGER NOT NULL,
-                photo_file_id TEXT
+                photo_file_id TEXT,
+                description TEXT
             )
         """)
 
@@ -42,14 +43,16 @@ def init_database():
         columns = connection.execute(
             "PRAGMA table_info(users)"
         ).fetchall()
-        column_names = {
-            column["name"]
-            for column in columns
-        }
+        column_names = {column["name"] for column in columns}
         if "photo_file_id" not in column_names:
             connection.execute("""
                 ALTER TABLE users
                 ADD COLUMN photo_file_id TEXT
+            """)
+        if "description" not in column_names:
+            connection.execute("""
+                ALTER TABLE users
+                ADD COLUMN description TEXT
             """)
 
         # ======================================
@@ -179,7 +182,8 @@ def create_user(
     search_gender,
     search_age_min,
     search_age_max,
-    photo_file_id
+    photo_file_id,
+    description=""
 ):
     connection = get_connection()
     try:
@@ -194,9 +198,10 @@ def create_user(
                 search_gender,
                 search_age_min,
                 search_age_max,
-                photo_file_id
+                photo_file_id,
+                description
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 telegram_id,
@@ -208,6 +213,7 @@ def create_user(
                 search_age_min,
                 search_age_max,
                 photo_file_id,
+                description,
             )
         )
         connection.commit()
@@ -529,7 +535,8 @@ def get_matches(
                 users.age,
                 users.gender,
                 users.city,
-                users.photo_file_id
+                users.photo_file_id,
+                users.description
             FROM matches
             JOIN users
                 ON users.telegram_id =
