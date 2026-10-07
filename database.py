@@ -339,7 +339,13 @@ def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
                     RANDOM()
                 LIMIT 1
                 """,
-                (telegram_id, age_min, age_max, telegram_id, city),
+                (
+                    telegram_id,
+                    age_min,
+                    age_max,
+                    telegram_id,
+                    city,
+                ),
             ).fetchone()
         else:
             user = connection.execute(
@@ -359,28 +365,18 @@ def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
                     RANDOM()
                 LIMIT 1
                 """,
-                (telegram_id, search_gender, age_min, age_max, telegram_id, city),
+                (
+                    telegram_id,
+                    search_gender,
+                    age_min,
+                    age_max,
+                    telegram_id,
+                    city,
+                ),
             ).fetchone()
-        if user:
-            return user
-        user = connection.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE telegram_id != ?
-              AND telegram_id NOT IN (
-                  SELECT viewed_id
-                  FROM views
-                  WHERE viewer_id = ?
-              )
-            ORDER BY
-                CASE WHEN city = ? THEN 0 ELSE 1 END,
-                RANDOM()
-            LIMIT 1
-            """,
-            (telegram_id, telegram_id, city),
-        ).fetchone()
+
         return user
+
     finally:
         connection.close()
 
