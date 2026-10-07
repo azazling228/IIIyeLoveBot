@@ -587,6 +587,7 @@ async def registration_photo(
         search_age_min=data["search_age_min"],
         search_age_max=data["search_age_max"],
         photo_file_id=data["photo_file_id"],
+        description=data["description"],
     )
     await state.clear()
     await message.answer(
@@ -639,18 +640,21 @@ async def show_next_profile(message: Message, user):
         f"🎂 {profile['age']} лет\n"
         f"📍 {profile['city']}"
     )
-    keyboard = create_profile_keyboard(profile["telegram_id"])
-    if profile["photo_file_id"]:
-        await message.answer_photo(
-            photo=profile["photo_file_id"],
-            caption=limit_caption(caption),
-            reply_markup=keyboard,
-        )
-    else:
-        await message.answer(
-            caption,
-            reply_markup=keyboard,
-        )
+
+    if profile["description"]:
+        caption += f"\n\n📝 {profile['description']}"
+        keyboard = create_profile_keyboard(profile["telegram_id"])
+        if profile["photo_file_id"]:
+            await message.answer_photo(
+                photo=profile["photo_file_id"],
+                caption=limit_caption(caption),
+                reply_markup=keyboard,
+            )
+        else:
+            await message.answer(
+                caption,
+                reply_markup=keyboard,
+            )
 
 # ==========================================
 # ПРОПУСТИТЬ АНКЕТУ
@@ -1122,6 +1126,10 @@ async def my_profile(message: Message):
         f"Возраст: {user['age']}\n"
         f"Город: {user['city']}"
     )
+
+    if user["description"]:
+        caption += f"\n\n📝 {user['description']}"
+    
     keyboard = create_my_profile_keyboard()
     if user["photo_file_id"]:
         await message.answer_photo(
