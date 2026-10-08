@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import random
 from dotenv import load_dotenv
@@ -15,6 +16,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
+from aiogram.exceptions import TelegramAPIError
 from database import (
     init_database,
     get_user,
@@ -31,6 +33,21 @@ from database import (
     delete_user,
     get_connection,
     update_search_settings,
+    add_skip,
+    undo_last_skip,
+    reset_views,
+    get_incoming_likes,
+    remove_like,
+    add_block,
+    is_blocked,
+    add_report,
+    mark_messages_read,
+    get_messages,
+    delete_match,
+    update_profile_city,
+    update_profile_photo,
+    is_report_notified,
+    mark_report_notified,
 )
 
 # ==========================================
@@ -43,6 +60,11 @@ if not BOT_TOKEN:
     raise ValueError(
         "Не найден BOT_TOKEN в файле .env"
     )
+BOT_ADMIN_ID = os.getenv("BOT_ADMIN_ID")
+try:
+    BOT_ADMIN_ID = int(BOT_ADMIN_ID) if BOT_ADMIN_ID else None
+except ValueError:
+    raise ValueError("BOT_ADMIN_ID должен быть числом в файле .env")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -67,6 +89,8 @@ class Registration(StatesGroup):
     photo = State()
     edit_name = State()
     edit_description = State()
+    edit_photo = State()
+    edit_city = State()
     # Настройки поиска
     settings_gender = State()
     settings_age_min = State()
@@ -107,6 +131,13 @@ main_keyboard = ReplyKeyboardMarkup(
         [
             KeyboardButton(text="💘 Знакомства"),
             KeyboardButton(text="💞 Мои мэтчи"),
+        ],
+        [
+            KeyboardButton(text="❤️ Кто меня лайкнул"),
+            KeyboardButton(text="↩️ Вернуть анкету"),
+        ],
+        [
+            KeyboardButton(text="🔄 Показать анкеты заново"),
         ],
         [
             KeyboardButton(text="👤 Моя анкета"),
@@ -180,7 +211,17 @@ def create_profile_keyboard(profile_id):
                     text="❌ Пропустить",
                     callback_data=f"skip_{profile_id}",
                 ),
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🚫 Заблокировать",
+                    callback_data=f"block_{profile_id}",
+                ),
+                InlineKeyboardButton(
+                    text="⚠️ Пожаловаться",
+                    callback_data=f"report_{profile_id}",
+                ),
+            ],
         ]
     )
 
@@ -199,6 +240,16 @@ def create_like_back_keyboard(profile_id):
                     callback_data=f"skip_like_{profile_id}",
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    text="🚫 Заблокировать",
+                    callback_data=f"block_{profile_id}",
+                ),
+                InlineKeyboardButton(
+                    text="⚠️ Пожаловаться",
+                    callback_data=f"report_{profile_id}",
+                ),
+            ],
         ]
     )
 
@@ -207,8 +258,22 @@ def create_my_profile_keyboard():
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✏️ Редактировать",
-                    callback_data="edit_profile",
+                    text="✏️ Имя",
+                    callback_data="profile_edit_name",
+                ),
+                InlineKeyboardButton(
+                    text="📝 Описание",
+                    callback_data="profile_edit_description",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📸 Фото",
+                    callback_data="profile_edit_photo",
+                ),
+                InlineKeyboardButton(
+                    text="📍 Город",
+                    callback_data="profile_edit_city",
                 )
             ],
             [
@@ -251,6 +316,54 @@ def create_match_action_keyboard(profile_id):
                     callback_data="my_matches",
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    text="💔 Удалить мэтч",
+                    callback_data=f"unmatch_{profile_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🚫 Заблокировать",
+                    callback_data=f"block_{profile_id}",
+                ),
+                InlineKeyboardButton(
+                    text="⚠️ Пожаловаться",
+                    callback_data=f"report_{profile_id}",
+                ),
+            ],
+        ]
+    )
+
+def create_unmatch_confirm_keyboard(profile_id):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💔 Да, удалить мэтч",
+                    callback_data=f"confirm_unmatch_{profile_id}",
+                ),
+                InlineKeyboardButton(
+                    text="↩️ Отмена",
+                    callback_data=f"cancel_unmatch_{profile_id}",
+                ),
+            ]
+        ]
+    )
+
+def create_block_confirm_keyboard(profile_id):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚫 Да, заблокировать",
+                    callback_data=f"confirm_block_{profile_id}",
+                ),
+                InlineKeyboardButton(
+                    text="↩️ Отмена",
+                    callback_data=f"cancel_block_{profile_id}",
+                ),
+            ]
         ]
     )
 
@@ -522,7 +635,16 @@ async def registration_search_age_max(
     if age_max < 18 or age_max > 100:
         await message.answer("Возраст должен быть от 18 до 100.")
         return
-    if age_max < data["search_age_min"]:
+    age_min = data.get("search_age_min")
+    if not isinstance(age_min, int):
+        await state.clear()
+        await message.answer(
+            "Потерялись данные регистрации.\n\n"
+            "Напиши /start, чтобы начать создание анкеты заново.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+    if age_max < age_min:
         await message.answer(
             "Максимальный возраст не может быть "
             "меньше минимального."
@@ -575,8 +697,26 @@ async def registration_photo(
         )
         return
     photo_file_id = message.photo[-1].file_id
-    await state.update_data(photo_file_id=photo_file_id)
     data = await state.get_data()
+    required_fields = (
+        "name",
+        "age",
+        "gender",
+        "city",
+        "search_gender",
+        "search_age_min",
+        "search_age_max",
+        "description",
+    )
+    if any(field not in data for field in required_fields):
+        await state.clear()
+        await message.answer(
+            "Потерялись данные регистрации, поэтому анкету не удалось сохранить.\n\n"
+            "Напиши /start, чтобы начать создание анкеты заново.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+    await state.update_data(photo_file_id=photo_file_id)
     create_user(
         telegram_id=message.from_user.id,
         name=data["name"],
@@ -586,7 +726,7 @@ async def registration_photo(
         search_gender=data["search_gender"],
         search_age_min=data["search_age_min"],
         search_age_max=data["search_age_max"],
-        photo_file_id=data["photo_file_id"],
+        photo_file_id=photo_file_id,
         description=data["description"],
     )
     await state.clear()
@@ -634,6 +774,9 @@ async def show_next_profile(message: Message, user):
         viewer_id=user["telegram_id"],
         viewed_id=profile["telegram_id"],
     )
+    await send_profile_card(message, profile)
+
+async def send_profile_card(message: Message, profile):
     caption = (
         "💘 Новая анкета!\n\n"
         f"👤 {profile['name']}\n"
@@ -643,18 +786,83 @@ async def show_next_profile(message: Message, user):
 
     if profile["description"]:
         caption += f"\n\n📝 {profile['description']}"
-        keyboard = create_profile_keyboard(profile["telegram_id"])
-        if profile["photo_file_id"]:
-            await message.answer_photo(
-                photo=profile["photo_file_id"],
-                caption=limit_caption(caption),
-                reply_markup=keyboard,
-            )
-        else:
-            await message.answer(
-                caption,
-                reply_markup=keyboard,
-            )
+    keyboard = create_profile_keyboard(profile["telegram_id"])
+    if profile["photo_file_id"]:
+        await message.answer_photo(
+            photo=profile["photo_file_id"],
+            caption=limit_caption(caption),
+            reply_markup=keyboard,
+        )
+    else:
+        await message.answer(caption, reply_markup=keyboard)
+
+# ==========================================
+# ВХОДЯЩИЕ ЛАЙКИ И ВОЗВРАТ АНКЕТЫ
+# ==========================================
+
+async def show_next_incoming_like(message: Message, user_id):
+    incoming_likes = get_incoming_likes(user_id)
+    if not incoming_likes:
+        await message.answer(
+            "❤️ Новых лайков пока нет.\n\n"
+            "Когда кто-нибудь тебя лайкнет, анкета появится здесь.",
+            reply_markup=main_keyboard,
+        )
+        return
+    profile = incoming_likes[0]
+    caption = (
+        "❤️ Тебе поставили лайк!\n\n"
+        f"👤 {profile['name']}\n"
+        f"🎂 {profile['age']} лет\n"
+        f"📍 {profile['city']}"
+    )
+    if profile["description"]:
+        caption += f"\n\n📝 {profile['description']}"
+    keyboard = create_like_back_keyboard(profile["telegram_id"])
+    if profile["photo_file_id"]:
+        await message.answer_photo(
+            photo=profile["photo_file_id"],
+            caption=limit_caption(caption),
+            reply_markup=keyboard,
+        )
+    else:
+        await message.answer(caption, reply_markup=keyboard)
+
+@dp.message(lambda message: message.text == "❤️ Кто меня лайкнул")
+async def incoming_likes(message: Message):
+    if not get_user(message.from_user.id):
+        await message.answer("Сначала создай анкету через /start.")
+        return
+    await show_next_incoming_like(message, message.from_user.id)
+
+@dp.message(lambda message: message.text == "↩️ Вернуть анкету")
+async def undo_skip(message: Message):
+    user = get_user(message.from_user.id)
+    if not user:
+        await message.answer("Сначала создай анкету через /start.")
+        return
+    profile_id = undo_last_skip(message.from_user.id)
+    if not profile_id:
+        await message.answer("Пока нечего возвращать — ты ещё не пропускал анкеты.")
+        return
+    profile = get_user(profile_id)
+    if not profile or is_blocked(message.from_user.id, profile_id):
+        await message.answer(
+            "Эту анкету уже нельзя показать. Продолжай знакомиться!",
+            reply_markup=main_keyboard,
+        )
+        return
+    await send_profile_card(message, profile)
+
+@dp.message(lambda message: message.text == "🔄 Показать анкеты заново")
+async def reset_profile_queue(message: Message):
+    user = get_user(message.from_user.id)
+    if not user:
+        await message.answer("Сначала создай анкету через /start.")
+        return
+    reset_views(message.from_user.id)
+    await message.answer("🔄 История просмотров очищена. Показываю анкеты заново.")
+    await show_next_profile(message, user)
 
 # ==========================================
 # ПРОПУСТИТЬ АНКЕТУ
@@ -675,6 +883,15 @@ async def skip_profile(callback: CallbackQuery):
     user = get_user(callback.from_user.id)
     if not user:
         return
+    try:
+        skipped_id = int(callback.data.replace("skip_", ""))
+    except ValueError:
+        await callback.message.answer("Ошибка анкеты.")
+        return
+    if skipped_id == user["telegram_id"] or not get_user(skipped_id):
+        await callback.message.answer("Анкета больше недоступна.")
+        return
+    add_skip(user["telegram_id"], skipped_id)
     await show_next_profile(callback.message, user)
 
 # ==========================================
@@ -697,6 +914,9 @@ async def like_back(callback: CallbackQuery):
     profile = get_user(profile_id)
     if not profile:
         await callback.answer("Эта анкета больше недоступна.")
+        return
+    if is_blocked(user["telegram_id"], profile_id):
+        await callback.answer("Этот пользователь недоступен.")
         return
     if profile_id == user["telegram_id"]:
         await callback.answer("Нельзя лайкнуть самого себя 😄")
@@ -756,6 +976,7 @@ async def like_back(callback: CallbackQuery):
                 )
         except Exception:
             pass
+    await show_next_incoming_like(callback.message, user["telegram_id"])
 
 # ==========================================
 # ПРОПУСТИТЬ ПОЛУЧЕННЫЙ ЛАЙК
@@ -770,13 +991,17 @@ async def skip_received_like(callback: CallbackQuery):
     except ValueError:
         await callback.answer("Ошибка анкеты.")
         return
-    # Сейчас просто убираем кнопки.
-    # Сам лайк не удаляем.
+    user = get_user(callback.from_user.id)
+    if not user or not has_like(profile_id, user["telegram_id"]):
+        await callback.answer("Этот лайк уже недоступен.")
+        return
+    remove_like(profile_id, user["telegram_id"])
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
     await callback.answer("Лайк пропущен ❌")
+    await show_next_incoming_like(callback.message, callback.from_user.id)
 
 # ==========================================
 # ЛАЙК
@@ -805,10 +1030,13 @@ async def like_profile(callback: CallbackQuery):
     if profile_id == user["telegram_id"]:
         await callback.answer("Нельзя лайкнуть самого себя 😄")
         return
+    if is_blocked(user["telegram_id"], profile_id):
+        await callback.answer("Этот пользователь недоступен.")
+        return
     # --------------------------------------
     # ДОБАВЛЯЕМ ЛАЙК
     # --------------------------------------
-    add_like(
+    new_like = add_like(
         from_user=user["telegram_id"],
         to_user=profile_id,
     )
@@ -879,37 +1107,196 @@ async def like_profile(callback: CallbackQuery):
         # ----------------------------------
         # УВЕДОМЛЯЕМ ПОЛУЧАТЕЛЯ ЛАЙКА
         # ----------------------------------
-        try:
-            like_caption = (
-                "❤️ Тебе поставили лайк!\n\n"
-                f"👤 {user['name']}\n"
-                f"🎂 {user['age']} лет\n"
-                f"📍 {user['city']}\n\n"
-                "Хочешь поставить лайк в ответ?"
-            )
-            if user["photo_file_id"]:
-                await bot.send_photo(
-                    chat_id=profile_id,
-                    photo=user["photo_file_id"],
-                    caption=limit_caption(like_caption),
-                    reply_markup=create_like_back_keyboard(
-                        user["telegram_id"]
-                    ),
+        if new_like:
+            try:
+                like_caption = (
+                    "❤️ Тебе поставили лайк!\n\n"
+                    f"👤 {user['name']}\n"
+                    f"🎂 {user['age']} лет\n"
+                    f"📍 {user['city']}\n\n"
+                    "Хочешь поставить лайк в ответ?"
                 )
-            else:
-                await bot.send_message(
-                    chat_id=profile_id,
-                    text=like_caption,
-                    reply_markup=create_like_back_keyboard(
-                        user["telegram_id"]
-                    ),
-                )
-        except Exception:
-            pass
+                if user["photo_file_id"]:
+                    await bot.send_photo(
+                        chat_id=profile_id,
+                        photo=user["photo_file_id"],
+                        caption=limit_caption(like_caption),
+                        reply_markup=create_like_back_keyboard(
+                            user["telegram_id"]
+                        ),
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=profile_id,
+                        text=like_caption,
+                        reply_markup=create_like_back_keyboard(
+                            user["telegram_id"]
+                        ),
+                    )
+            except Exception:
+                pass
     # --------------------------------------
     # ПОКАЗЫВАЕМ СЛЕДУЮЩУЮ АНКЕТУ
     # --------------------------------------
     await show_next_profile(callback.message, user)
+
+# ==========================================
+# ЖАЛОБЫ, БЛОКИРОВКИ И УДАЛЕНИЕ МЭТЧА
+# ==========================================
+
+@dp.callback_query(lambda callback: callback.data.startswith("block_"))
+async def request_block(callback: CallbackQuery):
+    try:
+        profile_id = int(callback.data.replace("block_", ""))
+    except ValueError:
+        await callback.answer("Ошибка анкеты.")
+        return
+    if profile_id == callback.from_user.id or not get_user(profile_id):
+        await callback.answer("Анкета недоступна.")
+        return
+    await callback.message.edit_reply_markup(
+        reply_markup=create_block_confirm_keyboard(profile_id)
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda callback: callback.data.startswith("cancel_block_"))
+async def cancel_block(callback: CallbackQuery):
+    try:
+        profile_id = int(callback.data.replace("cancel_block_", ""))
+    except ValueError:
+        await callback.answer("Ошибка анкеты.")
+        return
+    await callback.message.edit_reply_markup(
+        reply_markup=(
+            create_match_action_keyboard(profile_id)
+            if get_match(callback.from_user.id, profile_id)
+            else create_profile_keyboard(profile_id)
+        )
+    )
+    await callback.answer("Блокировка отменена")
+
+@dp.callback_query(lambda callback: callback.data.startswith("confirm_block_"))
+async def confirm_block(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    try:
+        profile_id = int(callback.data.replace("confirm_block_", ""))
+    except ValueError:
+        await callback.answer("Ошибка анкеты.")
+        return
+    if profile_id == callback.from_user.id or not get_user(profile_id):
+        await callback.answer("Анкета недоступна.")
+        return
+    add_block(callback.from_user.id, profile_id)
+    state_data = await state.get_data()
+    if state_data.get("partner_id") == profile_id:
+        await state.clear()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        "🚫 Пользователь заблокирован. Его анкеты и сообщения больше не будут доступны.",
+        reply_markup=main_keyboard,
+    )
+    await callback.answer("Пользователь заблокирован")
+
+@dp.callback_query(lambda callback: callback.data.startswith("report_"))
+async def report_profile(callback: CallbackQuery):
+    try:
+        profile_id = int(callback.data.replace("report_", ""))
+    except ValueError:
+        await callback.answer("Ошибка анкеты.")
+        return
+    reporter = get_user(callback.from_user.id)
+    reported = get_user(profile_id)
+    if not reporter or not reported or profile_id == callback.from_user.id:
+        await callback.answer("Анкета недоступна.")
+        return
+    reporter_id = reporter["telegram_id"]
+    reported_id = reported["telegram_id"]
+    add_report(reporter_id, reported_id)
+    if is_report_notified(reporter_id, reported_id):
+        await callback.answer("Ты уже отправлял жалобу на эту анкету.")
+        return
+    if not BOT_ADMIN_ID:
+        logging.error("BOT_ADMIN_ID is not configured; report stored without notification")
+        await callback.answer("Жалоба сохранена, но администратор не настроен.")
+        return
+    report_text = (
+        "⚠️ Жалоба на анкету\n\n"
+        f"Отправитель ID {reporter['telegram_id']}: {reporter['name'][:100]}\n"
+        f"Анкета ID {reported['telegram_id']}: {reported['name'][:100]}"
+    )
+    try:
+        await bot.send_message(BOT_ADMIN_ID, report_text)
+    except TelegramAPIError:
+        logging.exception("Failed to notify admin about a user report")
+        await callback.answer("Жалоба сохранена, но уведомить администратора не удалось.")
+        return
+    mark_report_notified(reporter_id, reported_id)
+    await callback.answer("Жалоба отправлена модератору. Спасибо!")
+
+@dp.callback_query(lambda callback: callback.data.startswith("unmatch_"))
+async def request_unmatch(callback: CallbackQuery):
+    try:
+        other_user_id = int(callback.data.replace("unmatch_", ""))
+    except ValueError:
+        await callback.answer("Ошибка мэтча.")
+        return
+    if not get_match(callback.from_user.id, other_user_id):
+        await callback.answer("Мэтч уже недоступен.")
+        return
+    await callback.message.edit_reply_markup(
+        reply_markup=create_unmatch_confirm_keyboard(other_user_id)
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda callback: callback.data.startswith("cancel_unmatch_"))
+async def cancel_unmatch(callback: CallbackQuery):
+    try:
+        other_user_id = int(callback.data.replace("cancel_unmatch_", ""))
+    except ValueError:
+        await callback.answer("Ошибка мэтча.")
+        return
+    profile = get_user(other_user_id)
+    if not profile or not get_match(callback.from_user.id, other_user_id):
+        await callback.answer("Мэтч уже недоступен.")
+        return
+    await callback.message.edit_reply_markup(
+        reply_markup=create_match_action_keyboard(other_user_id)
+    )
+    await callback.answer("Отменено")
+
+@dp.callback_query(lambda callback: callback.data.startswith("confirm_unmatch_"))
+async def confirm_unmatch(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    try:
+        other_user_id = int(callback.data.replace("confirm_unmatch_", ""))
+    except ValueError:
+        await callback.answer("Ошибка мэтча.")
+        return
+    match = get_match(callback.from_user.id, other_user_id)
+    if not match:
+        await callback.answer("Мэтч уже недоступен.")
+        return
+    delete_match(callback.from_user.id, other_user_id)
+    state_data = await state.get_data()
+    if state_data.get("partner_id") == other_user_id:
+        await state.clear()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        "💔 Мэтч удалён. История переписки удалена.",
+        reply_markup=main_keyboard,
+    )
+    try:
+        await bot.send_message(
+            other_user_id,
+            "💔 Ваш мэтч был удалён. История переписки больше недоступна.",
+        )
+    except TelegramAPIError:
+        logging.exception("Failed to notify user about removed match")
+    await callback.answer("Мэтч удалён")
 
 # ==========================================
 # МОИ МЭТЧИ
@@ -942,16 +1329,40 @@ async def my_matches(message: Message):
         "пообщаться:"
     )
     for match in matches:
+        unread_label = (
+            f" · {match['unread_count']} новых"
+            if match["unread_count"]
+            else ""
+        )
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text=f"💬 {match['name']}, {match['age']}",
+                        text=(
+                            f"💬 {match['name']}, {match['age']}"
+                            f"{unread_label}"
+                        ),
                         callback_data=(
                             f"chat_{match['other_user_id']}"
                         ),
                     )
-                ]
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="💔 Удалить мэтч",
+                        callback_data=f"unmatch_{match['other_user_id']}",
+                    ),
+                    InlineKeyboardButton(
+                        text="🚫 Заблокировать",
+                        callback_data=f"block_{match['other_user_id']}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="⚠️ Пожаловаться",
+                        callback_data=f"report_{match['other_user_id']}",
+                    )
+                ],
             ]
         )
         if match["photo_file_id"]:
@@ -999,6 +1410,9 @@ async def open_chat(
     if not current_user or not other_user:
         await callback.answer("Пользователь не найден.")
         return
+    if is_blocked(current_user_id, other_user_id):
+        await callback.answer("Этот пользователь недоступен.")
+        return
     match = get_match(current_user_id, other_user_id)
     if not match:
         await callback.answer("У вас нет мэтча.")
@@ -1019,6 +1433,19 @@ async def open_chat(
         "«↩️ Выйти из чата».",
         reply_markup=chat_keyboard,
     )
+    mark_messages_read(match["id"], current_user_id)
+    history = get_messages(match["id"])
+    if history:
+        await callback.message.answer("📜 Последние сообщения:")
+        for stored_message in history:
+            sender_name = (
+                current_user["name"]
+                if stored_message["sender_id"] == current_user_id
+                else other_user["name"]
+            )
+            text = f"{sender_name}: {stored_message['text']}"
+            for start in range(0, len(text), 3900):
+                await callback.message.answer(text[start:start + 3900])
 
 # ==========================================
 # ОТПРАВКА СООБЩЕНИЯ В ЧАТ
@@ -1065,7 +1492,7 @@ async def send_chat_message(
         )
         return
     match = get_match(message.from_user.id, partner_id)
-    if not match:
+    if not match or is_blocked(message.from_user.id, partner_id):
         await state.clear()
         await message.answer(
             "❌ Этот мэтч больше недоступен.",
@@ -1081,9 +1508,11 @@ async def send_chat_message(
     try:
         await bot.send_message(
             partner_id,
-            f"💬 Сообщение от "
-            f"{message.from_user.full_name}:\n\n"
-            f"{text}",
+            f"💬 Сообщение от {message.from_user.full_name}:",
+        )
+        await bot.send_message(
+            partner_id,
+            text,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
@@ -1098,7 +1527,8 @@ async def send_chat_message(
             ),
         )
         await message.answer(f"✅ Отправлено {partner_name}.")
-    except Exception:
+    except TelegramAPIError:
+        logging.exception("Failed to deliver a chat message")
         await message.answer(
             "⚠️ Не удалось доставить сообщение.\n\n"
             "Возможно, пользователь заблокировал "
@@ -1148,9 +1578,9 @@ async def my_profile(message: Message):
 # ==========================================
 
 @dp.callback_query(
-    lambda callback: callback.data == "edit_profile"
+    lambda callback: callback.data == "profile_edit_name"
 )
-async def edit_profile(
+async def start_edit_name(
     callback: CallbackQuery,
     state: FSMContext,
 ):
@@ -1165,6 +1595,51 @@ async def edit_profile(
         f"Текущее имя: {user['name']}\n\n"
         "Напиши новое имя:"
     )
+
+@dp.callback_query(
+    lambda callback: callback.data == "profile_edit_description"
+)
+async def start_edit_description(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    if not get_user(callback.from_user.id):
+        await callback.answer("Анкета не найдена.")
+        return
+    await state.set_state(Registration.edit_description)
+    await callback.answer()
+    await callback.message.answer(
+        "📝 Напиши новое описание о себе.\n\n"
+        "Чтобы удалить описание, напиши «Пропустить»."
+    )
+
+@dp.callback_query(
+    lambda callback: callback.data == "profile_edit_photo"
+)
+async def start_edit_photo(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    if not get_user(callback.from_user.id):
+        await callback.answer("Анкета не найдена.")
+        return
+    await state.set_state(Registration.edit_photo)
+    await callback.answer()
+    await callback.message.answer("📸 Отправь новую фотографию.")
+
+@dp.callback_query(
+    lambda callback: callback.data == "profile_edit_city"
+)
+async def start_edit_city(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    if not get_user(callback.from_user.id):
+        await callback.answer("Анкета не найдена.")
+        return
+    await state.set_state(Registration.edit_city)
+    await callback.answer()
+    await callback.message.answer("📍 Напиши название нового города.")
 
 @dp.message(Registration.edit_name)
 async def edit_profile_name(
@@ -1194,11 +1669,10 @@ async def edit_profile_name(
         connection.commit()
     finally:
         connection.close()
-    await state.set_state(Registration.edit_description)
+    await state.clear()
     await message.answer(
-        f"✅ Имя изменено на: {name}\n\n"
-        "📝 Теперь напиши новое описание о себе.\n\n"
-        "Если хочешь удалить описание, напиши «Пропустить»."
+        f"✅ Имя изменено на: {name}",
+        reply_markup=main_keyboard,
     )
 
 @dp.message(Registration.edit_description)
@@ -1228,6 +1702,37 @@ async def edit_profile_description(
     await state.clear()
     await message.answer(
         "✅ Описание анкеты обновлено!",
+        reply_markup=main_keyboard,
+    )
+
+@dp.message(Registration.edit_photo)
+async def edit_profile_photo(
+    message: Message,
+    state: FSMContext,
+):
+    if not message.photo:
+        await message.answer("Отправь именно фотографию через Telegram.")
+        return
+    update_profile_photo(message.from_user.id, message.photo[-1].file_id)
+    await state.clear()
+    await message.answer("✅ Фотография обновлена!", reply_markup=main_keyboard)
+
+@dp.message(Registration.edit_city)
+async def edit_profile_city(
+    message: Message,
+    state: FSMContext,
+):
+    if not message.text:
+        await message.answer("Напиши название города текстом.")
+        return
+    city = message.text.strip()
+    if len(city) < 2:
+        await message.answer("Название города слишком короткое. Попробуй ещё раз.")
+        return
+    update_profile_city(message.from_user.id, city)
+    await state.clear()
+    await message.answer(
+        f"✅ Город обновлён: {city}",
         reply_markup=main_keyboard,
     )
 

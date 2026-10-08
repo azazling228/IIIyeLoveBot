@@ -104,9 +104,54 @@ def init_database():
                 sender_id INTEGER NOT NULL,
                 receiver_id INTEGER NOT NULL,
                 text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                read_at TIMESTAMP
+            )
+        """)
+
+        message_columns = connection.execute(
+            "PRAGMA table_info(messages)"
+        ).fetchall()
+        if "read_at" not in {column["name"] for column in message_columns}:
+            connection.execute("""
+                ALTER TABLE messages
+                ADD COLUMN read_at TIMESTAMP
+            """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS skips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                viewer_id INTEGER NOT NULL,
+                skipped_id INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS blocks (
+                blocker_id INTEGER NOT NULL,
+                blocked_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (blocker_id, blocked_id)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_id INTEGER NOT NULL,
+                reported_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                notified INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(reporter_id, reported_id)
+            )
+        """)
+        report_columns = connection.execute(
+            "PRAGMA table_info(reports)"
+        ).fetchall()
+        if "notified" not in {column["name"] for column in report_columns}:
+            connection.execute("""
+                ALTER TABLE reports
+                ADD COLUMN notified INTEGER NOT NULL DEFAULT 0
+            """)
 
         # ======================================
         # ИНДЕКСЫ
@@ -146,6 +191,14 @@ def init_database():
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_messages_receiver
             ON messages(receiver_id, created_at)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_messages_unread
+            ON messages(receiver_id, read_at, match_id)
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_skips_viewer
+            ON skips(viewer_id, id)
         """)
 
         connection.commit()
@@ -254,6 +307,28 @@ def update_search_settings(
     finally:
         connection.close()
 
+def update_profile_city(telegram_id, city):
+    connection = get_connection()
+    try:
+        connection.execute(
+            "UPDATE users SET city = ? WHERE telegram_id = ?",
+            (city, telegram_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+def update_profile_photo(telegram_id, photo_file_id):
+    connection = get_connection()
+    try:
+        connection.execute(
+            "UPDATE users SET photo_file_id = ? WHERE telegram_id = ?",
+            (photo_file_id, telegram_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
 # ==========================================
 # ПОИСК АНКЕТ
 # ==========================================
@@ -274,6 +349,11 @@ def find_profiles(
                 FROM users
                 WHERE telegram_id != ?
                   AND age BETWEEN ? AND ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM blocks
+                      WHERE (blocker_id = ? AND blocked_id = users.telegram_id)
+                         OR (blocker_id = users.telegram_id AND blocked_id = ?)
+                  )
                 ORDER BY
                     CASE
                         WHEN city = ? THEN 0
@@ -285,6 +365,8 @@ def find_profiles(
                     telegram_id,
                     age_min,
                     age_max,
+                    telegram_id,
+                    telegram_id,
                     city,
                 )
             ).fetchall()
@@ -296,6 +378,11 @@ def find_profiles(
                 WHERE telegram_id != ?
                   AND gender = ?
                   AND age BETWEEN ? AND ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM blocks
+                      WHERE (blocker_id = ? AND blocked_id = users.telegram_id)
+                         OR (blocker_id = users.telegram_id AND blocked_id = ?)
+                  )
                 ORDER BY
                     CASE
                         WHEN city = ? THEN 0
@@ -308,6 +395,8 @@ def find_profiles(
                     search_gender,
                     age_min,
                     age_max,
+                    telegram_id,
+                    telegram_id,
                     city,
                 )
             ).fetchall()
@@ -329,6 +418,11 @@ def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
                 FROM users
                 WHERE telegram_id != ?
                   AND age BETWEEN ? AND ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM blocks
+                      WHERE (blocker_id = ? AND blocked_id = users.telegram_id)
+                         OR (blocker_id = users.telegram_id AND blocked_id = ?)
+                  )
                   AND telegram_id NOT IN (
                       SELECT viewed_id
                       FROM views
@@ -344,6 +438,8 @@ def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
                     age_min,
                     age_max,
                     telegram_id,
+                    telegram_id,
+                    telegram_id,
                     city,
                 ),
             ).fetchone()
@@ -355,6 +451,11 @@ def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
                 WHERE telegram_id != ?
                   AND gender = ?
                   AND age BETWEEN ? AND ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM blocks
+                      WHERE (blocker_id = ? AND blocked_id = users.telegram_id)
+                         OR (blocker_id = users.telegram_id AND blocked_id = ?)
+                  )
                   AND telegram_id NOT IN (
                       SELECT viewed_id
                       FROM views
@@ -370,6 +471,8 @@ def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
                     search_gender,
                     age_min,
                     age_max,
+                    telegram_id,
+                    telegram_id,
                     telegram_id,
                     city,
                 ),
@@ -409,6 +512,65 @@ def add_view(
     finally:
         connection.close()
 
+def add_skip(viewer_id, skipped_id):
+    connection = get_connection()
+    try:
+        connection.execute(
+            "DELETE FROM skips WHERE viewer_id = ? AND skipped_id = ?",
+            (viewer_id, skipped_id),
+        )
+        connection.execute(
+            "INSERT INTO skips (viewer_id, skipped_id) VALUES (?, ?)",
+            (viewer_id, skipped_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+def undo_last_skip(viewer_id):
+    connection = get_connection()
+    try:
+        skip = connection.execute(
+            """
+            SELECT id, skipped_id
+            FROM skips
+            WHERE viewer_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (viewer_id,),
+        ).fetchone()
+        if not skip:
+            return None
+        connection.execute("DELETE FROM skips WHERE id = ?", (skip["id"],))
+        connection.execute(
+            """
+            DELETE FROM views
+            WHERE viewer_id = ? AND viewed_id = ?
+            """,
+            (viewer_id, skip["skipped_id"]),
+        )
+        connection.commit()
+        return skip["skipped_id"]
+    finally:
+        connection.close()
+
+def reset_views(viewer_id):
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            "DELETE FROM views WHERE viewer_id = ?",
+            (viewer_id,),
+        )
+        connection.execute(
+            "DELETE FROM skips WHERE viewer_id = ?",
+            (viewer_id,),
+        )
+        connection.commit()
+        return cursor.rowcount
+    finally:
+        connection.close()
+
 # ==========================================
 # ДОБАВИТЬ ЛАЙК
 # ==========================================
@@ -421,7 +583,7 @@ def add_like(
         return
     connection = get_connection()
     try:
-        connection.execute(
+        cursor = connection.execute(
             """
             INSERT OR IGNORE INTO likes (
                 from_user,
@@ -435,6 +597,38 @@ def add_like(
             )
         )
         connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+def remove_like(from_user, to_user):
+    connection = get_connection()
+    try:
+        connection.execute(
+            "DELETE FROM likes WHERE from_user = ? AND to_user = ?",
+            (from_user, to_user),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+def get_incoming_likes(telegram_id):
+    connection = get_connection()
+    try:
+        return connection.execute(
+            """
+            SELECT users.*
+            FROM likes
+            JOIN users ON users.telegram_id = likes.from_user
+            WHERE likes.to_user = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM likes AS reciprocal
+                  WHERE reciprocal.from_user = ? AND reciprocal.to_user = likes.from_user
+              )
+            ORDER BY likes.rowid DESC
+            """,
+            (telegram_id, telegram_id),
+        ).fetchall()
     finally:
         connection.close()
 
@@ -524,6 +718,13 @@ def get_matches(
             SELECT
                 matches.id AS match_id,
                 matches.created_at,
+                (
+                    SELECT COUNT(*)
+                    FROM messages
+                    WHERE messages.match_id = matches.id
+                      AND messages.receiver_id = ?
+                      AND messages.read_at IS NULL
+                ) AS unread_count,
                 CASE
                     WHEN matches.user_one = ?
                     THEN matches.user_two
@@ -548,6 +749,7 @@ def get_matches(
             ORDER BY matches.created_at DESC
             """,
             (
+                telegram_id,
                 telegram_id,
                 telegram_id,
                 telegram_id,
@@ -633,10 +835,14 @@ def get_messages(
         messages = connection.execute(
             """
             SELECT *
-            FROM messages
-            WHERE match_id = ?
-            ORDER BY created_at ASC, id ASC
-            LIMIT ?
+            FROM (
+                SELECT *
+                FROM messages
+                WHERE match_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
             """,
             (
                 match_id,
@@ -644,6 +850,140 @@ def get_messages(
             )
         ).fetchall()
         return messages
+    finally:
+        connection.close()
+
+def mark_messages_read(match_id, receiver_id):
+    connection = get_connection()
+    try:
+        connection.execute(
+            """
+            UPDATE messages
+            SET read_at = CURRENT_TIMESTAMP
+            WHERE match_id = ? AND receiver_id = ? AND read_at IS NULL
+            """,
+            (match_id, receiver_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+def add_block(blocker_id, blocked_id):
+    if blocker_id == blocked_id:
+        return
+    connection = get_connection()
+    try:
+        connection.execute(
+            "INSERT OR IGNORE INTO blocks (blocker_id, blocked_id) VALUES (?, ?)",
+            (blocker_id, blocked_id),
+        )
+        connection.execute(
+            """
+            DELETE FROM likes
+            WHERE (from_user = ? AND to_user = ?)
+               OR (from_user = ? AND to_user = ?)
+            """,
+            (blocker_id, blocked_id, blocked_id, blocker_id),
+        )
+        connection.execute(
+            """
+            DELETE FROM views
+            WHERE (viewer_id = ? AND viewed_id = ?)
+               OR (viewer_id = ? AND viewed_id = ?)
+            """,
+            (blocker_id, blocked_id, blocked_id, blocker_id),
+        )
+        connection.execute(
+            """
+            DELETE FROM skips
+            WHERE (viewer_id = ? AND skipped_id = ?)
+               OR (viewer_id = ? AND skipped_id = ?)
+            """,
+            (blocker_id, blocked_id, blocked_id, blocker_id),
+        )
+        match_ids = connection.execute(
+            """
+            SELECT id FROM matches
+            WHERE (user_one = ? AND user_two = ?)
+               OR (user_one = ? AND user_two = ?)
+            """,
+            (blocker_id, blocked_id, blocked_id, blocker_id),
+        ).fetchall()
+        for match in match_ids:
+            connection.execute(
+                "DELETE FROM messages WHERE match_id = ?",
+                (match["id"],),
+            )
+        connection.execute(
+            """
+            DELETE FROM matches
+            WHERE (user_one = ? AND user_two = ?)
+               OR (user_one = ? AND user_two = ?)
+            """,
+            (blocker_id, blocked_id, blocked_id, blocker_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+def is_blocked(user_one, user_two):
+    connection = get_connection()
+    try:
+        return connection.execute(
+            """
+            SELECT 1 FROM blocks
+            WHERE (blocker_id = ? AND blocked_id = ?)
+               OR (blocker_id = ? AND blocked_id = ?)
+            LIMIT 1
+            """,
+            (user_one, user_two, user_two, user_one),
+        ).fetchone() is not None
+    finally:
+        connection.close()
+
+def add_report(reporter_id, reported_id):
+    if reporter_id == reported_id:
+        return False
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO reports (reporter_id, reported_id)
+            VALUES (?, ?)
+            """,
+            (reporter_id, reported_id),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+def is_report_notified(reporter_id, reported_id):
+    connection = get_connection()
+    try:
+        report = connection.execute(
+            """
+            SELECT notified FROM reports
+            WHERE reporter_id = ? AND reported_id = ?
+            """,
+            (reporter_id, reported_id),
+        ).fetchone()
+        return bool(report and report["notified"])
+    finally:
+        connection.close()
+
+def mark_report_notified(reporter_id, reported_id):
+    connection = get_connection()
+    try:
+        connection.execute(
+            """
+            UPDATE reports
+            SET notified = 1
+            WHERE reporter_id = ? AND reported_id = ?
+            """,
+            (reporter_id, reported_id),
+        )
+        connection.commit()
     finally:
         connection.close()
 
@@ -689,6 +1029,14 @@ def delete_match(
                 (
                     match["id"],
                 )
+            )
+            connection.execute(
+                """
+                DELETE FROM likes
+                WHERE (from_user = ? AND to_user = ?)
+                   OR (from_user = ? AND to_user = ?)
+                """,
+                (user_one, user_two, user_two, user_one),
             )
         connection.commit()
     finally:
@@ -746,6 +1094,28 @@ def delete_user(
                 telegram_id,
                 telegram_id,
             )
+        )
+
+        connection.execute(
+            """
+            DELETE FROM skips
+            WHERE viewer_id = ? OR skipped_id = ?
+            """,
+            (telegram_id, telegram_id),
+        )
+        connection.execute(
+            """
+            DELETE FROM blocks
+            WHERE blocker_id = ? OR blocked_id = ?
+            """,
+            (telegram_id, telegram_id),
+        )
+        connection.execute(
+            """
+            DELETE FROM reports
+            WHERE reporter_id = ? OR reported_id = ?
+            """,
+            (telegram_id, telegram_id),
         )
 
         # --------------------------------------
