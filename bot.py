@@ -1113,25 +1113,44 @@ async def like_profile(callback: CallbackQuery):
                     "❤️ Тебе поставили лайк!\n\n"
                     f"👤 {user['name']}\n"
                     f"🎂 {user['age']} лет\n"
-                    f"📍 {user['city']}\n\n"
-                    "Хочешь поставить лайк в ответ?"
+                    f"📍 {user['city']}"
                 )
-                if user["photo_file_id"]:
+                if user["description"]:
+                    like_caption += f"\n\n📝 {user['description']}"
+                like_caption += "\n\nХочешь поставить лайк в ответ?"
+                like_keyboard = create_like_back_keyboard(
+                    user["telegram_id"]
+                )
+                if user["photo_file_id"] and len(like_caption) <= 1024:
                     await bot.send_photo(
                         chat_id=profile_id,
                         photo=user["photo_file_id"],
-                        caption=limit_caption(like_caption),
-                        reply_markup=create_like_back_keyboard(
-                            user["telegram_id"]
+                        caption=like_caption,
+                        reply_markup=like_keyboard,
+                    )
+                elif user["photo_file_id"]:
+                    await bot.send_photo(
+                        chat_id=profile_id,
+                        photo=user["photo_file_id"],
+                        caption=(
+                            "❤️ Тебе поставили лайк!\n"
+                            f"👤 {user['name']}, {user['age']} лет\n"
+                            f"📍 {user['city']}"
                         ),
+                    )
+                    await bot.send_message(
+                        chat_id=profile_id,
+                        text=(
+                            f"📝 Описание:\n\n{user['description']}\n\n"
+                            "Хочешь поставить лайк в ответ?"
+                        ),
+                        reply_markup=like_keyboard,
                     )
                 else:
                     await bot.send_message(
                         chat_id=profile_id,
                         text=like_caption,
-                        reply_markup=create_like_back_keyboard(
-                            user["telegram_id"]
-                        ),
+                        reply_markup=like_keyboard,
                     )
             except Exception:
                 pass
