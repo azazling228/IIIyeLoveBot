@@ -543,13 +543,6 @@ def undo_last_skip(viewer_id):
         if not skip:
             return None
         connection.execute("DELETE FROM skips WHERE id = ?", (skip["id"],))
-        connection.execute(
-            """
-            DELETE FROM views
-            WHERE viewer_id = ? AND viewed_id = ?
-            """,
-            (viewer_id, skip["skipped_id"]),
-        )
         connection.commit()
         return skip["skipped_id"]
     finally:
