@@ -19,6 +19,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 from aiogram.exceptions import TelegramAPIError
+from aiogram.utils.backoff import BackoffConfig
 from database import (
     init_database,
     get_user,
@@ -2025,7 +2026,16 @@ async def main():
     web_runner = await start_miniapp_server(bot, BOT_TOKEN)
     logging.info("Bot and Telegram Mini App are starting")
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(
+            bot,
+            polling_timeout=30,
+            backoff_config=BackoffConfig(
+                min_delay=6,
+                max_delay=60,
+                factor=2,
+                jitter=0,
+            ),
+        )
     finally:
         await web_runner.cleanup()
 
