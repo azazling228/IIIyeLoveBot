@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import random
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
@@ -15,6 +16,7 @@ from aiogram.types import (
     ReplyKeyboardRemove,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    WebAppInfo,
 )
 from aiogram.exceptions import TelegramAPIError
 from database import (
@@ -65,6 +67,19 @@ try:
     BOT_ADMIN_ID = int(BOT_ADMIN_ID) if BOT_ADMIN_ID else None
 except ValueError:
     raise ValueError("BOT_ADMIN_ID должен быть числом в файле .env")
+MINI_APP_URL = os.getenv("MINI_APP_URL", "").strip()
+if MINI_APP_URL:
+    mini_app_address = urlsplit(MINI_APP_URL)
+    if (
+        mini_app_address.scheme != "https"
+        or not mini_app_address.hostname
+        or mini_app_address.path not in ("", "/")
+        or mini_app_address.query
+        or mini_app_address.fragment
+    ):
+        raise ValueError(
+            "MINI_APP_URL должен быть публичным HTTPS-адресом в корне домена"
+        )
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -126,26 +141,38 @@ search_gender_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-main_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="💘 Знакомства"),
-            KeyboardButton(text="💞 Мои мэтчи"),
-        ],
-        [
-            KeyboardButton(text="❤️ Кто меня лайкнул"),
-            KeyboardButton(text="↩️ Вернуть анкету"),
-        ],
-        [
-            KeyboardButton(text="🔄 Показать анкеты заново"),
-        ],
-        [
-            KeyboardButton(text="👤 Моя анкета"),
-        ],
-        [
-            KeyboardButton(text="⚙️ Настройки поиска"),
-        ],
+main_keyboard_rows = [
+    [
+        KeyboardButton(text="💘 Знакомства"),
+        KeyboardButton(text="💞 Мои мэтчи"),
     ],
+    [
+        KeyboardButton(text="❤️ Кто меня лайкнул"),
+        KeyboardButton(text="↩️ Вернуть анкету"),
+    ],
+    [
+        KeyboardButton(text="🔄 Показать анкеты заново"),
+    ],
+    [
+        KeyboardButton(text="👤 Моя анкета"),
+    ],
+    [
+        KeyboardButton(text="⚙️ Настройки поиска"),
+    ],
+]
+if MINI_APP_URL:
+    main_keyboard_rows.insert(
+        0,
+        [
+            KeyboardButton(
+                text="💖 Открыть приложение",
+                web_app=WebAppInfo(url=MINI_APP_URL),
+            )
+        ],
+    )
+
+main_keyboard = ReplyKeyboardMarkup(
+    keyboard=main_keyboard_rows,
     resize_keyboard=True,
 )
 
@@ -1993,8 +2020,14 @@ async def settings_age_max(
 
 async def main():
     init_database()
-    print("Бот запущен!")
-    await dp.start_polling(bot)
+    from miniapp import start_miniapp_server
+
+    web_runner = await start_miniapp_server(bot, BOT_TOKEN)
+    logging.info("Bot and Telegram Mini App are starting")
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await web_runner.cleanup()
 
 if __name__ == "__main__":
     asyncio.run(main())

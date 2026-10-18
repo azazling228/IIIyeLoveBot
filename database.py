@@ -512,6 +512,21 @@ def add_view(
     finally:
         connection.close()
 
+def has_viewed(viewer_id, viewed_id):
+    connection = get_connection()
+    try:
+        return connection.execute(
+            """
+            SELECT 1
+            FROM views
+            WHERE viewer_id = ? AND viewed_id = ?
+            LIMIT 1
+            """,
+            (viewer_id, viewed_id),
+        ).fetchone() is not None
+    finally:
+        connection.close()
+
 def add_skip(viewer_id, skipped_id):
     connection = get_connection()
     try:
@@ -702,12 +717,34 @@ def create_match(
 # ==========================================
 
 def get_matches(
-    telegram_id
+    telegram_id,
+    include_last_message=False,
 ):
     connection = get_connection()
     try:
-        matches = connection.execute(
+        last_message_fields = ""
+        order_by = "matches.created_at DESC"
+        if include_last_message:
+            last_message_fields = """
+                ,
+                (
+                    SELECT messages.text
+                    FROM messages
+                    WHERE messages.match_id = matches.id
+                    ORDER BY messages.id DESC
+                    LIMIT 1
+                ) AS last_message,
+                (
+                    SELECT messages.created_at
+                    FROM messages
+                    WHERE messages.match_id = matches.id
+                    ORDER BY messages.id DESC
+                    LIMIT 1
+                ) AS last_message_at
             """
+            order_by = "COALESCE(last_message_at, matches.created_at) DESC"
+        matches = connection.execute(
+            f"""
             SELECT
                 matches.id AS match_id,
                 matches.created_at,
@@ -717,7 +754,8 @@ def get_matches(
                     WHERE messages.match_id = matches.id
                       AND messages.receiver_id = ?
                       AND messages.read_at IS NULL
-                ) AS unread_count,
+                ) AS unread_count
+                {last_message_fields},
                 CASE
                     WHEN matches.user_one = ?
                     THEN matches.user_two
@@ -739,7 +777,7 @@ def get_matches(
                     END
             WHERE matches.user_one = ?
                OR matches.user_two = ?
-            ORDER BY matches.created_at DESC
+            ORDER BY {order_by}
             """,
             (
                 telegram_id,
