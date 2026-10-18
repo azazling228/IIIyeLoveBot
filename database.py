@@ -318,6 +318,22 @@ def update_profile_city(telegram_id, city):
     finally:
         connection.close()
 
+def update_profile_fields(telegram_id, name, city, description):
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE users
+            SET name = ?, city = ?, description = ?
+            WHERE telegram_id = ?
+            """,
+            (name, city, description, telegram_id),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
 def update_profile_photo(telegram_id, photo_file_id):
     connection = get_connection()
     try:

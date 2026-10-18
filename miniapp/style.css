@@ -197,7 +197,8 @@ button { color: inherit; }
 }
 .nav-item {
   position: relative;
-  min-width: 66px;
+  min-width: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -267,6 +268,31 @@ button { color: inherit; }
 .profile-panel .avatar { width: 92px; height: 92px; border-radius: 26px; }
 .profile-panel h2 { margin: 16px 0 5px; font-size: 27px; }
 .profile-panel p { color: var(--muted); line-height: 1.5; white-space: pre-wrap; }
+.profile-hint { margin-bottom: 0; font-size: 13px; }
+.profile-form { display: flex; flex-direction: column; gap: 9px; }
+.field-label { margin-top: 8px; font-size: 14px; font-weight: 750; }
+.profile-field { width: 100%; }
+.profile-description-input { min-height: 130px; resize: vertical; }
+.profile-form-actions { display: flex; gap: 10px; margin-top: 10px; }
+.profile-form-actions button { flex: 1; margin-top: 0; }
+.match-card {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+}
+.match-person { padding: 8px; border: 0; cursor: default; }
+.match-heart { color: var(--rose); font-size: 20px; }
+.match-description {
+  margin: 0;
+  padding: 0 12px 10px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.match-chat-button { width: 100%; margin-top: 0; }
 .toast {
   position: fixed;
   z-index: 10;

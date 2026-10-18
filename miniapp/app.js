@@ -260,6 +260,49 @@
     });
   }
 
+  async function loadMatches() {
+    setActiveTab("matches");
+    const result = await api("/api/matches");
+    if (!result.matches.length) {
+      renderEmpty(
+        "💘",
+        "Пока нет мэтчей",
+        "Когда симпатия станет взаимной, ваши мэтчи появятся здесь.",
+        "Начать знакомиться",
+        discover,
+      );
+      return;
+    }
+    main.innerHTML = `
+      <p class="eyebrow">Взаимная симпатия</p>
+      <h1 class="page-heading">Твои мэтчи</h1>
+      <section class="content-list">
+        ${result.matches.map((match) => `
+          <article class="match-card">
+            <div class="person-row match-person">
+              ${match.has_photo ? `<img class="avatar" data-photo-id="${match.id}" alt="">` : `<span class="avatar"></span>`}
+              <span class="person-copy">
+                <span class="person-name">${escapeHtml(match.name)}, ${match.age}</span>
+                <span class="person-preview">${escapeHtml(match.city)}</span>
+              </span>
+              <span class="match-heart">♥</span>
+            </div>
+            ${match.description ? `<p class="match-description">${escapeHtml(match.description)}</p>` : ""}
+            <button class="primary-button match-chat-button" data-open-match="${match.id}">
+              💬 Открыть чат
+            </button>
+          </article>`).join("")}
+      </section>`;
+    main.querySelectorAll("[data-photo-id]").forEach((image) => {
+      loadPhoto(Number(image.dataset.photoId), image);
+    });
+    main.querySelectorAll("[data-open-match]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runAction(() => openChat(Number(button.dataset.openMatch)));
+      });
+    });
+  }
+
   async function openChat(partnerId) {
     window.clearInterval(state.poll);
     state.partner = { id: partnerId };
@@ -343,6 +386,10 @@
     setActiveTab("profile");
     const profile = await api("/api/me");
     state.me = profile;
+    renderProfile(profile);
+  }
+
+  function renderProfile(profile) {
     main.innerHTML = `
       <p class="eyebrow">Рад знакомству</p>
       <h1 class="page-heading">Твоя анкета</h1>
@@ -351,10 +398,65 @@
         <h2>${escapeHtml(profile.name)}, ${profile.age}</h2>
         <p>⌖ ${escapeHtml(profile.city)}</p>
         ${profile.description ? `<p>${escapeHtml(profile.description)}</p>` : ""}
-        <p>Настроить анкету можно в Telegram-боте.</p>
+        <button class="primary-button" id="edit-profile">Редактировать анкету</button>
+        <p class="profile-hint">Фотографию можно изменить в чате с ботом.</p>
       </section>`;
     const photo = document.getElementById("my-photo");
     if (photo) loadPhoto(profile.id, photo);
+    document.getElementById("edit-profile").addEventListener(
+      "click",
+      renderProfileEditor,
+    );
+  }
+
+  function renderProfileEditor() {
+    const profile = state.me;
+    main.innerHTML = `
+      <p class="eyebrow">Обнови информацию</p>
+      <h1 class="page-heading">Редактирование</h1>
+      <form class="profile-panel profile-form" id="profile-form">
+        <label class="field-label" for="profile-name">Имя</label>
+        <input class="chat-input profile-field" id="profile-name" name="name"
+          maxlength="100" required value="${escapeHtml(profile.name)}">
+        <label class="field-label" for="profile-city">Город</label>
+        <input class="chat-input profile-field" id="profile-city" name="city"
+          maxlength="100" required value="${escapeHtml(profile.city)}">
+        <label class="field-label" for="profile-description">Описание</label>
+        <textarea class="chat-input profile-field profile-description-input"
+          id="profile-description" name="description" maxlength="1000">${escapeHtml(profile.description)}</textarea>
+        <div class="profile-form-actions">
+          <button class="secondary-button" type="button" id="cancel-profile-edit">Отмена</button>
+          <button class="primary-button" type="submit">Сохранить</button>
+        </div>
+        <p class="profile-hint">Фотографию можно изменить в чате с ботом.</p>
+      </form>`;
+    document.getElementById("cancel-profile-edit").addEventListener(
+      "click",
+      () => renderProfile(profile),
+    );
+    document.getElementById("profile-form").addEventListener(
+      "submit",
+      saveProfile,
+    );
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const payload = Object.fromEntries(new FormData(form));
+    submitButton.disabled = true;
+    try {
+      state.me = await api("/api/me", {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      renderProfile(state.me);
+      showToast("Анкета обновлена ❤️");
+    } catch (error) {
+      submitButton.disabled = false;
+      showToast(error.message);
+    }
   }
 
   function updateBadges(likes, chats) {
@@ -383,6 +485,7 @@
       }
       if (tab === "discover") await discover();
       else if (tab === "likes") await loadLikes();
+      else if (tab === "matches") await loadMatches();
       else if (tab === "chats") await loadChats();
       else await loadProfile();
     } catch (error) {

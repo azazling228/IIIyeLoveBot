@@ -30,6 +30,7 @@ from database import (
     mark_messages_read,
     remove_like,
     reset_views,
+    update_profile_fields,
 )
 
 
@@ -149,6 +150,41 @@ def create_miniapp_app(bot, bot_token):
         if not user:
             return _json_error("Create a profile in the bot first.", 404)
         return web.json_response(_profile_payload(user))
+
+    async def update_me(request):
+        user_id = request["telegram_id"]
+        user = get_user(user_id)
+        if not user:
+            return _json_error("Create a profile in the bot first.", 404)
+        try:
+            payload = await request.json()
+        except (TypeError, json.JSONDecodeError):
+            return _json_error("A valid profile is required.", 400)
+        if not isinstance(payload, dict) or set(payload) != {
+            "name",
+            "city",
+            "description",
+        }:
+            return _json_error(
+                "Name, city, and description are required.", 400
+            )
+        name = payload["name"]
+        city = payload["city"]
+        description = payload["description"]
+        if not isinstance(name, str) or not 2 <= len(name.strip()) <= 100:
+            return _json_error("Name must contain 2 to 100 characters.", 400)
+        if not isinstance(city, str) or not 2 <= len(city.strip()) <= 100:
+            return _json_error("City must contain 2 to 100 characters.", 400)
+        if not isinstance(description, str) or len(description.strip()) > 1000:
+            return _json_error("Description can contain up to 1000 characters.", 400)
+        if not update_profile_fields(
+            user_id,
+            name.strip(),
+            city.strip(),
+            description.strip(),
+        ):
+            return _json_error("Profile not found.", 404)
+        return web.json_response(_profile_payload(get_user(user_id)))
 
     async def discover(request):
         user = get_user(request["telegram_id"])
@@ -290,6 +326,25 @@ def create_miniapp_app(bot, bot_token):
             }
         )
 
+    async def matches(request):
+        user_id = request["telegram_id"]
+        if not get_user(user_id):
+            return _json_error("Create a profile in the bot first.", 404)
+        return web.json_response(
+            {
+                "matches": [
+                    {
+                        **_chat_payload(match),
+                        "matched_at": match["created_at"],
+                    }
+                    for match in get_matches(
+                        user_id,
+                        include_last_message=True,
+                    )
+                ]
+            }
+        )
+
     async def reset_discovery(request):
         reset_views(request["telegram_id"])
         return await discover(request)
@@ -401,6 +456,7 @@ def create_miniapp_app(bot, bot_token):
     app.router.add_get("/style.css", styles)
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/me", me)
+    app.router.add_patch("/api/me", update_me)
     app.router.add_get("/api/discover", discover)
     app.router.add_post("/api/discover/reset", reset_discovery)
     app.router.add_post("/api/discover/decision", discover_decision)
@@ -408,6 +464,7 @@ def create_miniapp_app(bot, bot_token):
     app.router.add_get("/api/likes", incoming_likes)
     app.router.add_post("/api/likes/respond", respond_to_like)
     app.router.add_get("/api/chats", chats)
+    app.router.add_get("/api/matches", matches)
     app.router.add_get("/api/chats/{partner_id}/messages", chat_messages)
     app.router.add_post("/api/chats/{partner_id}/messages", send_chat_message)
     return app

@@ -23,4 +23,6 @@ polling service can compete for Telegram `getUpdates` and cause flood control.
 Telegram's signed `initData` is verified by the server on every API request.
 Requests without a valid Telegram launch context are rejected. Profile
 discovery, likes, matches, and messages use the same database tables as the
-bot, so chats and message history stay shared.
+bot, so matches and chat history stay shared. The Mini App also lets users edit
+their name, city, and description; profile photos can still be changed in the
+Telegram bot.
