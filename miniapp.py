@@ -27,10 +27,14 @@ from database import (
     has_like,
     has_viewed,
     is_blocked,
+    message_matches_banned_words,
     mark_messages_read,
     delete_match,
+    delete_user,
     remove_like,
     reset_views,
+    update_profile_active,
+    update_profile_preferences,
     update_search_settings,
     update_profile_fields,
 )
@@ -116,7 +120,13 @@ def _json_error(message, status):
 def create_miniapp_app(bot, bot_token):
     @web.middleware
     async def telegram_auth_middleware(request, handler):
-        if request.path in {"/", "/app.js", "/style.css", "/healthz"}:
+        if request.path in {
+            "/",
+            "/app.js",
+            "/style.css",
+            "/healthz",
+            "/legal",
+        }:
             return await handler(request)
         authorization = request.headers.get("Authorization", "")
         if not authorization.startswith("tma "):
@@ -144,6 +154,9 @@ def create_miniapp_app(bot, bot_token):
     async def styles(_request):
         return web.FileResponse(MINIAPP_DIR / "style.css")
 
+    async def legal(_request):
+        return web.FileResponse(MINIAPP_DIR / "legal.html")
+
     async def health(_request):
         return web.json_response({"status": "ok"})
 
@@ -159,6 +172,11 @@ def create_miniapp_app(bot, bot_token):
                 "search_age_max": user["search_age_max"],
                 "match_count": len(get_matches(user["telegram_id"])),
                 "like_count": user["total_likes_received"],
+                "is_active": bool(user["is_active"]),
+                "notify_likes": bool(user["notify_likes"]),
+                "notify_matches": bool(user["notify_matches"]),
+                "notify_messages": bool(user["notify_messages"]),
+                "banned_words": user["banned_words"] or "",
             }
         )
 
@@ -237,6 +255,96 @@ def create_miniapp_app(bot, bot_token):
             }
         )
 
+    async def update_profile_preferences_endpoint(request):
+        user_id = request["telegram_id"]
+        user = get_user(user_id)
+        if not user:
+            return _json_error("Create a profile in the bot first.", 404)
+        try:
+            payload = await request.json()
+        except (TypeError, json.JSONDecodeError):
+            return _json_error("Valid profile preferences are required.", 400)
+        expected_fields = {
+            "notify_likes",
+            "notify_matches",
+            "notify_messages",
+            "banned_words",
+        }
+        if not isinstance(payload, dict) or set(payload) != expected_fields:
+            return _json_error("All notification and ban-word settings are required.", 400)
+        if any(type(payload[field]) is not bool for field in (
+            "notify_likes",
+            "notify_matches",
+            "notify_messages",
+        )):
+            return _json_error("Notification settings must be true or false.", 400)
+        banned_words = payload["banned_words"]
+        if not isinstance(banned_words, str) or len(banned_words) > 1000:
+            return _json_error("Ban-word list must not exceed 1000 characters.", 400)
+        words = []
+        seen_words = set()
+        for line in banned_words.splitlines():
+            word = " ".join(line.split())
+            if not word:
+                continue
+            if len(word) > 100:
+                return _json_error("Each ban word or phrase must be at most 100 characters.", 400)
+            normalized = word.casefold()
+            if normalized not in seen_words:
+                seen_words.add(normalized)
+                words.append(word)
+        normalized_words = "\n".join(words)
+        if not update_profile_preferences(
+            user_id,
+            payload["notify_likes"],
+            payload["notify_matches"],
+            payload["notify_messages"],
+            normalized_words,
+        ):
+            return _json_error("Profile not found.", 404)
+        return web.json_response(
+            {
+                "notify_likes": payload["notify_likes"],
+                "notify_matches": payload["notify_matches"],
+                "notify_messages": payload["notify_messages"],
+                "banned_words": normalized_words,
+            }
+        )
+
+    async def update_account_status(request):
+        user_id = request["telegram_id"]
+        if not get_user(user_id):
+            return _json_error("Profile not found.", 404)
+        try:
+            payload = await request.json()
+        except (TypeError, json.JSONDecodeError):
+            return _json_error("A valid active status is required.", 400)
+        if not isinstance(payload, dict) or type(payload.get("is_active")) is not bool:
+            return _json_error("is_active must be true or false.", 400)
+        if not update_profile_active(user_id, payload["is_active"]):
+            return _json_error("Profile not found.", 404)
+        return web.json_response({"is_active": payload["is_active"]})
+
+    async def delete_account(request):
+        user_id = request["telegram_id"]
+        if not get_user(user_id):
+            return _json_error("Profile not found.", 404)
+        former_matches = get_matches(user_id)
+        if not delete_user(user_id):
+            return _json_error("Profile could not be deleted.", 500)
+        for match in former_matches:
+            partner_id = match["other_user_id"]
+            try:
+                await bot.send_message(
+                    partner_id,
+                    "Профиль собеседника удалён. Мэтч и переписка в приложении больше недоступны.",
+                )
+            except TelegramAPIError:
+                logging.exception(
+                    "Failed to notify user about deleted Mini App profile"
+                )
+        return web.json_response({"deleted": True})
+
     async def discover(request):
         user = get_user(request["telegram_id"])
         if not user:
@@ -309,16 +417,17 @@ def create_miniapp_app(bot, bot_token):
         add_like(user_id, profile_id)
         matched = False
         if has_like(profile_id, user_id):
-            create_match(user_id, profile_id)
+            new_match = create_match(user_id, profile_id)
             matched = True
-            try:
-                await bot.send_message(
-                    profile_id,
-                    f"💘 У вас мэтч с {get_user(user_id)['name'][:100]}! "
-                    "Вы можете продолжить общение в боте или приложении.",
-                )
-            except TelegramAPIError:
-                logging.exception("Failed to notify user about Mini App match")
+            if new_match and profile["notify_matches"]:
+                try:
+                    await bot.send_message(
+                        profile_id,
+                        f"💘 У вас мэтч с {get_user(user_id)['name'][:100]}! "
+                        "Вы можете продолжить общение в боте или приложении.",
+                    )
+                except TelegramAPIError:
+                    logging.exception("Failed to notify user about Mini App match")
         else:
             await _notify_like(profile_id, user_id)
         return web.json_response({"matched": matched})
@@ -353,15 +462,16 @@ def create_miniapp_app(bot, bot_token):
         if action != "like":
             return _json_error("Action must be like or skip.", 400)
         add_like(user_id, profile_id)
-        create_match(user_id, profile_id)
-        try:
-            await bot.send_message(
-                profile_id,
-                f"💘 У вас мэтч с {get_user(user_id)['name'][:100]}! "
-                "Вы можете продолжить общение в боте или приложении.",
-            )
-        except TelegramAPIError:
-            logging.exception("Failed to notify user about Mini App match")
+        new_match = create_match(user_id, profile_id)
+        if new_match and profile["notify_matches"]:
+            try:
+                await bot.send_message(
+                    profile_id,
+                    f"💘 У вас мэтч с {get_user(user_id)['name'][:100]}! "
+                    "Вы можете продолжить общение в боте или приложении.",
+                )
+            except TelegramAPIError:
+                logging.exception("Failed to notify user about Mini App match")
         return web.json_response({"matched": True})
 
     async def chats(request):
@@ -464,38 +574,45 @@ def create_miniapp_app(bot, bot_token):
         user = get_user(user_id)
         if not match or not partner or not user or is_blocked(user_id, partner_id):
             return _json_error("This chat is not available.", 404)
+        if message_matches_banned_words(text, partner_id):
+            return web.json_response({"filtered": True}, status=200)
         message_id = add_message(match["id"], user_id, partner_id, text)
-        try:
-            await bot.send_message(
-                partner_id,
-                f"💬 Сообщение от {user['name'][:100]}:\n\n{text}",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="💬 Ответить",
-                                callback_data=f"chat_{user_id}",
-                            )
+        if partner["notify_messages"]:
+            try:
+                await bot.send_message(
+                    partner_id,
+                    f"💬 Сообщение от {user['name'][:100]}:\n\n{text}",
+                    reply_markup=InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="💬 Ответить",
+                                    callback_data=f"chat_{user_id}",
+                                )
+                            ]
                         ]
-                    ]
-                ),
-            )
-        except TelegramAPIError:
-            logging.exception("Failed to deliver Mini App chat message")
-            return web.json_response(
-                {
-                    "message_id": message_id,
-                    "notification_warning": (
-                        "Message saved, but Telegram could not notify the other person."
                     ),
-                },
-                status=201,
-            )
-        return web.json_response({"message_id": message_id}, status=201)
+                )
+            except TelegramAPIError:
+                logging.exception("Failed to deliver Mini App chat notification")
+                return web.json_response(
+                    {
+                        "message_id": message_id,
+                        "notification_warning": (
+                            "Message saved, but Telegram could not notify the other person."
+                        ),
+                    },
+                    status=201,
+                )
+        response = {"message_id": message_id}
+        if not partner["notify_messages"]:
+            response["notification_disabled"] = True
+        return web.json_response(response, status=201)
 
     async def _notify_like(recipient_id, sender_id):
         sender = get_user(sender_id)
-        if not sender:
+        recipient = get_user(recipient_id)
+        if not sender or not recipient or not recipient["notify_likes"]:
             return
         text = (
             f"❤️ Тебе поставили лайк!\n\n"
@@ -525,10 +642,17 @@ def create_miniapp_app(bot, bot_token):
     app.router.add_get("/", index)
     app.router.add_get("/app.js", script)
     app.router.add_get("/style.css", styles)
+    app.router.add_get("/legal", legal)
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/me", me)
     app.router.add_patch("/api/me", update_me)
     app.router.add_patch("/api/search-settings", update_search)
+    app.router.add_patch(
+        "/api/profile-preferences",
+        update_profile_preferences_endpoint,
+    )
+    app.router.add_patch("/api/account/status", update_account_status)
+    app.router.add_delete("/api/account", delete_account)
     app.router.add_get("/api/discover", discover)
     app.router.add_post("/api/discover/reset", reset_discovery)
     app.router.add_post("/api/discover/decision", discover_decision)

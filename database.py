@@ -36,7 +36,12 @@ def init_database():
                 search_age_max INTEGER NOT NULL,
                 photo_file_id TEXT,
                 description TEXT,
-                total_likes_received INTEGER NOT NULL DEFAULT 0
+                total_likes_received INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                notify_likes INTEGER NOT NULL DEFAULT 1,
+                notify_matches INTEGER NOT NULL DEFAULT 1,
+                notify_messages INTEGER NOT NULL DEFAULT 1,
+                banned_words TEXT NOT NULL DEFAULT ''
             )
         """)
 
@@ -63,6 +68,17 @@ def init_database():
                 ALTER TABLE users
                 ADD COLUMN total_likes_received INTEGER NOT NULL DEFAULT 0
             """)
+        for column_name, column_definition in (
+            ("is_active", "INTEGER NOT NULL DEFAULT 1"),
+            ("notify_likes", "INTEGER NOT NULL DEFAULT 1"),
+            ("notify_matches", "INTEGER NOT NULL DEFAULT 1"),
+            ("notify_messages", "INTEGER NOT NULL DEFAULT 1"),
+            ("banned_words", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column_name not in column_names:
+                connection.execute(
+                    f"ALTER TABLE users ADD COLUMN {column_name} {column_definition}"
+                )
 
         # ======================================
         # ПРОСМОТРЫ
@@ -323,6 +339,67 @@ def update_search_settings(
     finally:
         connection.close()
 
+def update_profile_preferences(
+    telegram_id,
+    notify_likes,
+    notify_matches,
+    notify_messages,
+    banned_words,
+):
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE users
+            SET notify_likes = ?,
+                notify_matches = ?,
+                notify_messages = ?,
+                banned_words = ?
+            WHERE telegram_id = ?
+            """,
+            (
+                int(notify_likes),
+                int(notify_matches),
+                int(notify_messages),
+                banned_words,
+                telegram_id,
+            ),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+def update_profile_active(telegram_id, is_active):
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            "UPDATE users SET is_active = ? WHERE telegram_id = ?",
+            (int(is_active), telegram_id),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+def message_matches_banned_words(text, recipient_id):
+    import re
+
+    recipient = get_user(recipient_id)
+    if not recipient or not recipient["banned_words"]:
+        return False
+    normalized_text = text.casefold()
+    for entry in recipient["banned_words"].splitlines():
+        phrase = " ".join(entry.casefold().split())
+        if not phrase:
+            continue
+        if " " in phrase:
+            if phrase in " ".join(normalized_text.split()):
+                return True
+        elif re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", normalized_text):
+            return True
+    return False
+
 def update_profile_city(telegram_id, city):
     connection = get_connection()
     try:
@@ -380,6 +457,7 @@ def find_profiles(
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
+                  AND is_active = 1
                   AND age BETWEEN ? AND ?
                   AND NOT EXISTS (
                       SELECT 1 FROM blocks
@@ -408,6 +486,7 @@ def find_profiles(
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
+                  AND is_active = 1
                   AND gender = ?
                   AND age BETWEEN ? AND ?
                   AND NOT EXISTS (
@@ -443,12 +522,19 @@ def find_profiles(
 def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
     connection = get_connection()
     try:
+        current_user = connection.execute(
+            "SELECT is_active FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        if not current_user or not current_user["is_active"]:
+            return None
         if search_gender == "all":
             user = connection.execute(
                 """
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
+                  AND is_active = 1
                   AND age BETWEEN ? AND ?
                   AND NOT EXISTS (
                       SELECT 1 FROM blocks
@@ -481,6 +567,7 @@ def get_next_profile(telegram_id, city, search_gender, age_min, age_max):
                 SELECT *
                 FROM users
                 WHERE telegram_id != ?
+                  AND is_active = 1
                   AND gender = ?
                   AND age BETWEEN ? AND ?
                   AND NOT EXISTS (
@@ -1239,7 +1326,7 @@ def delete_user(
         # --------------------------------------
         # УДАЛЯЕМ ПОЛЬЗОВАТЕЛЯ
         # --------------------------------------
-        connection.execute(
+        cursor = connection.execute(
             """
             DELETE FROM users
             WHERE telegram_id = ?
@@ -1250,5 +1337,6 @@ def delete_user(
         )
 
         connection.commit()
+        return cursor.rowcount > 0
     finally:
         connection.close()

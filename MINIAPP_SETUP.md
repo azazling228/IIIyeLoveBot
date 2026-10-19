@@ -33,3 +33,11 @@ removed before this counter existed cannot be reconstructed. Search gender and
 age-range preferences can be updated from the discovery tab and are shared with
 the Telegram bot. Discovery settings open in a bottom sheet, and the light/dark
 theme choice is saved in the user's Mini App browser storage.
+
+The profile page also provides notification preferences, a per-user incoming
+message filter, and pause/delete controls. Pausing hides a profile from
+discovery without deleting its matches or chats. Deleting a profile removes its
+database records and associated matches and messages; it cannot remove messages
+already delivered to Telegram chat histories. The public `/legal` page contains
+the service rules and privacy information. Notification preferences are
+respected by both the Mini App and bot notification handlers.

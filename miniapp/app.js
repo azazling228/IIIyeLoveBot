@@ -596,8 +596,15 @@
         method: "POST",
         body: JSON.stringify({ text }),
       });
+      if (result.filtered) {
+        showToast("Сообщение скрыто фильтром собеседника");
+        return;
+      }
       input.value = "";
       if (result.notification_warning) showToast(result.notification_warning);
+      else if (result.notification_disabled) {
+        showToast("Сообщение сохранено; у собеседника отключены уведомления");
+      }
       await refreshChat(false);
     } catch (error) {
       showToast(error.message);
@@ -629,19 +636,228 @@
       <section class="profile-stats-card" aria-label="Статистика профиля">
         <div class="profile-stat">
           <span class="profile-stat-value">${profile.like_count ?? 0}</span>
-          <span class="profile-stat-label">Симпатии</span>
+          <span class="profile-stat-label">Лайки</span>
         </div>
         <div class="profile-stat">
           <span class="profile-stat-value">${profile.match_count ?? 0}</span>
           <span class="profile-stat-label">Мэтчи</span>
         </div>
       </section>`);
+    main.insertAdjacentHTML("beforeend", `
+      <section class="profile-settings-card" aria-label="Настройки анкеты">
+        <button class="profile-setting-row" data-profile-setting="notifications">
+          <span class="setting-icon">♧</span>
+          <span class="setting-copy">
+            <strong>Уведомления</strong>
+            <small>Лайки, мэтчи и сообщения</small>
+          </span>
+          <span class="setting-chevron">›</span>
+        </button>
+        <button class="profile-setting-row" data-profile-setting="banned-words">
+          <span class="setting-icon">⛨</span>
+          <span class="setting-copy">
+            <strong>Бан-слова</strong>
+            <small>Фильтр нежелательных сообщений</small>
+          </span>
+          <span class="setting-chevron">›</span>
+        </button>
+        <button class="profile-setting-row" data-profile-setting="pause">
+          <span class="setting-icon">♙</span>
+          <span class="setting-copy">
+            <strong>${profile.is_active ? "Приостановить анкету" : "Возобновить анкету"}</strong>
+            <small>${profile.is_active ? "Временно скрыть из поиска" : "Снова показывать в поиске"}</small>
+          </span>
+          <span class="setting-chevron">›</span>
+        </button>
+        <button class="profile-setting-row destructive-setting" data-profile-setting="delete">
+          <span class="setting-icon">⌫</span>
+          <span class="setting-copy"><strong>Удалить анкету</strong></span>
+          <span class="setting-chevron">›</span>
+        </button>
+        <a class="profile-legal-link" href="/legal" id="profile-legal-link">
+          Правила и конфиденциальность
+        </a>
+      </section>
+      <div class="settings-backdrop hidden" id="profile-settings-layer">
+        <section class="search-settings-sheet profile-settings-sheet"
+          role="dialog" aria-modal="true" aria-labelledby="profile-settings-title">
+          <div class="sheet-handle" aria-hidden="true"></div>
+          <div class="sheet-heading">
+            <h2 id="profile-settings-title"></h2>
+            <button class="icon-button close-settings" id="close-profile-settings"
+              type="button" aria-label="Закрыть настройки">×</button>
+          </div>
+          <div id="profile-settings-content"></div>
+        </section>
+      </div>`);
     const photo = document.getElementById("my-photo");
     if (photo) loadPhoto(profile.id, photo);
     document.getElementById("edit-profile").addEventListener(
       "click",
       renderProfileEditor,
     );
+    bindProfileSettings();
+  }
+
+  function bindProfileSettings() {
+    const layer = document.getElementById("profile-settings-layer");
+    const closeButton = document.getElementById("close-profile-settings");
+    const close = () => {
+      layer.classList.add("hidden");
+    };
+    closeButton.addEventListener("click", close);
+    layer.addEventListener("click", (event) => {
+      if (event.target === layer) close();
+    });
+    layer.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") close();
+    });
+    document.querySelectorAll("[data-profile-setting]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.profileSetting;
+        if (action === "notifications") openProfileSettings("notifications");
+        else if (action === "banned-words") openProfileSettings("banned-words");
+        else if (action === "pause") runAction(toggleProfileStatus);
+        else if (action === "delete") runAction(deleteProfile);
+      });
+    });
+    document.getElementById("profile-legal-link").addEventListener(
+      "click",
+      (event) => {
+        if (!telegram?.openLink) return;
+        event.preventDefault();
+        telegram.openLink(new URL("/legal", window.location.href).href);
+      },
+    );
+  }
+
+  function openProfileSettings(section) {
+    const layer = document.getElementById("profile-settings-layer");
+    const title = document.getElementById("profile-settings-title");
+    const content = document.getElementById("profile-settings-content");
+    layer.classList.remove("hidden");
+    if (section === "notifications") {
+      title.textContent = "Уведомления";
+      content.innerHTML = `
+        <p class="settings-description">Выбери, о чём бот будет присылать сообщения в Telegram.</p>
+        <form class="preferences-form" id="notifications-form">
+          ${[
+            ["notify_likes", "Лайки"],
+            ["notify_matches", "Мэтчи"],
+            ["notify_messages", "Сообщения"],
+          ].map(([key, label]) => `
+            <label class="preference-toggle">
+              <span>${label}</span>
+              <input type="checkbox" name="${key}" ${state.me[key] ? "checked" : ""}>
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>`).join("")}
+          <button class="primary-button search-save-button" type="submit">Сохранить</button>
+        </form>`;
+      document.getElementById("notifications-form").addEventListener(
+        "submit",
+        saveProfilePreferences,
+      );
+      return;
+    }
+    title.textContent = "Бан-слова";
+    content.innerHTML = `
+      <p class="settings-description">
+        Новые входящие сообщения с этими словами или выражениями не будут
+        сохранены и доставлены тебе. Каждое слово или выражение — с новой строки.
+      </p>
+      <form class="preferences-form" id="banned-words-form">
+        <label class="field-label" for="banned-words">Твой список</label>
+        <textarea class="chat-input banned-words-input" id="banned-words"
+          name="banned_words" maxlength="1000"
+          placeholder="Одно слово на строке">${escapeHtml(state.me.banned_words || "")}</textarea>
+        <p class="field-hint">До 1000 символов всего, не более 100 символов на строку.</p>
+        <button class="primary-button search-save-button" type="submit">Сохранить</button>
+      </form>`;
+    document.getElementById("banned-words-form").addEventListener(
+      "submit",
+      saveProfilePreferences,
+    );
+  }
+
+  async function saveProfilePreferences(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const values = Object.fromEntries(new FormData(form));
+    const payload = {
+      notify_likes: form.elements.notify_likes
+        ? form.elements.notify_likes.checked
+        : state.me.notify_likes,
+      notify_matches: form.elements.notify_matches
+        ? form.elements.notify_matches.checked
+        : state.me.notify_matches,
+      notify_messages: form.elements.notify_messages
+        ? form.elements.notify_messages.checked
+        : state.me.notify_messages,
+      banned_words: form.elements.banned_words
+        ? values.banned_words
+        : state.me.banned_words,
+    };
+    button.disabled = true;
+    try {
+      const preferences = await api("/api/profile-preferences", {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      state.me = { ...state.me, ...preferences };
+      document.getElementById("profile-settings-layer").classList.add("hidden");
+      renderProfile(state.me);
+      showToast("Настройки сохранены");
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message);
+    }
+  }
+
+  async function toggleProfileStatus() {
+    const nextActive = !state.me.is_active;
+    const confirmed = await confirmAction(
+      nextActive
+        ? "Возобновить анкету и снова показывать её в поиске?"
+        : "Приостановить анкету? Она исчезнет из поиска, но лайки, мэтчи и переписки сохранятся.",
+    );
+    if (!confirmed) return;
+    const result = await api("/api/account/status", {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: nextActive }),
+    });
+    state.me = { ...state.me, ...result };
+    renderProfile(state.me);
+    showToast(nextActive ? "Анкета снова видна в поиске" : "Анкета приостановлена");
+  }
+
+  async function deleteProfile() {
+    const confirmed = await confirmAction(
+      "Удалить анкету без возможности восстановления? Твои мэтчи и переписки в приложении и боте тоже будут удалены.",
+    );
+    if (!confirmed) return;
+    await api("/api/account", { method: "DELETE" });
+    window.clearInterval(state.poll);
+    state.me = null;
+    main.innerHTML = `
+      <section class="empty-state">
+        <div class="empty-icon">✓</div>
+        <h2>Анкета удалена</h2>
+        <p>Профиль, мэтчи и переписки удалены из базы приложения. Ранее доставленные сообщения в Telegram могут остаться в истории чатов.</p>
+        <button class="primary-button" id="close-deleted-profile">Закрыть приложение</button>
+      </section>`;
+    document.querySelector(".bottom-nav").classList.add("hidden");
+    document.getElementById("close-deleted-profile").addEventListener(
+      "click",
+      () => telegram?.close(),
+    );
+  }
+
+  function confirmAction(message) {
+    if (telegram?.showConfirm) {
+      return new Promise((resolve) => telegram.showConfirm(message, resolve));
+    }
+    return Promise.resolve(window.confirm(message));
   }
 
   function renderProfileEditor() {

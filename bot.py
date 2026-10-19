@@ -49,6 +49,7 @@ from database import (
     delete_match,
     update_profile_city,
     update_profile_photo,
+    message_matches_banned_words,
     is_report_notified,
     mark_report_notified,
 )
@@ -976,7 +977,7 @@ async def like_back(callback: CallbackQuery):
     )
     # Уведомляем второго пользователя только
     # при создании нового мэтча.
-    if new_match:
+    if new_match and profile["notify_matches"]:
         try:
             match_text = (
                 "💘 МЭТЧ!\n\n"
@@ -1098,7 +1099,7 @@ async def like_profile(callback: CallbackQuery):
         # ----------------------------------
         # УВЕДОМЛЯЕМ ВТОРОГО ПОЛЬЗОВАТЕЛЯ
         # ----------------------------------
-        if new_match:
+        if new_match and profile["notify_matches"]:
             try:
                 match_text = (
                     "💘 МЭТЧ!\n\n"
@@ -1135,7 +1136,7 @@ async def like_profile(callback: CallbackQuery):
         # ----------------------------------
         # УВЕДОМЛЯЕМ ПОЛУЧАТЕЛЯ ЛАЙКА
         # ----------------------------------
-        if new_like:
+        if new_like and profile["notify_likes"]:
             try:
                 like_caption = (
                     "❤️ Тебе поставили лайк!\n\n"
@@ -1546,12 +1547,24 @@ async def send_chat_message(
             reply_markup=main_keyboard,
         )
         return
+    if message_matches_banned_words(text, partner_id):
+        await message.answer(
+            "Сообщение не отправлено: собеседник настроил фильтр сообщений."
+        )
+        return
     add_message(
         match_id=match_id,
         sender_id=message.from_user.id,
         receiver_id=partner_id,
         text=text,
     )
+    partner = get_user(partner_id)
+    if partner and not partner["notify_messages"]:
+        await message.answer(
+            f"✅ Сообщение сохранено для {partner_name}. "
+            "У собеседника отключены уведомления о сообщениях."
+        )
+        return
     try:
         await bot.send_message(
             partner_id,
