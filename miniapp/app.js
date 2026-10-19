@@ -122,23 +122,112 @@
     const result = await api("/api/discover");
     state.profile = result.profile;
     if (!state.profile) {
-      renderEmpty(
-        "♡",
-        "Анкеты закончились",
-        "Пока больше некого показать. Загляни сюда позже или начни поиск заново.",
-        "Показать сначала",
-        async () => {
+      main.innerHTML = `
+        ${renderSearchSettings()}
+        <section class="empty-state">
+          <div class="empty-icon">♡</div>
+          <h2>Анкеты закончились</h2>
+          <p>Пока больше некого показать. Загляни сюда позже или начни поиск заново.</p>
+          <button class="primary-button" id="empty-action">Показать сначала</button>
+        </section>`;
+      bindSearchSettings();
+      document.getElementById("empty-action").addEventListener(
+        "click",
+        () => runAction(async () => {
           await api("/api/discover/reset", { method: "POST" });
-          await discover();
-        },
+          await discover(true);
+        }),
       );
       return;
     }
     renderProfileCard(state.profile);
   }
 
+  function renderSearchSettings() {
+    const profile = state.me;
+    const genderOptions = [
+      ["male", "Парни"],
+      ["female", "Девушки"],
+      ["all", "Все"],
+    ];
+    return `
+      <details class="search-settings">
+        <summary>⚙️ Настройки поиска</summary>
+        <form class="search-settings-form" id="search-settings-form">
+          <label class="field-label" for="search-gender">Кого показывать</label>
+          <select class="chat-input profile-field" id="search-gender" name="search_gender">
+            ${genderOptions.map(([value, label]) => `
+              <option value="${value}" ${profile?.search_gender === value ? "selected" : ""}>
+                ${label}
+              </option>`).join("")}
+          </select>
+          <div class="age-range-fields">
+            <label class="age-field">
+              <span class="field-label">От</span>
+              <input class="chat-input" type="number" name="search_age_min"
+                min="18" max="100" required value="${profile?.search_age_min ?? 18}">
+            </label>
+            <label class="age-field">
+              <span class="field-label">До</span>
+              <input class="chat-input" type="number" name="search_age_max"
+                min="18" max="100" required value="${profile?.search_age_max ?? 100}">
+            </label>
+          </div>
+          <button class="primary-button search-save-button" type="submit">
+            Сохранить настройки
+          </button>
+        </form>
+      </details>`;
+  }
+
+  function bindSearchSettings() {
+    document.getElementById("search-settings-form")?.addEventListener(
+      "submit",
+      saveSearchSettings,
+    );
+  }
+
+  async function saveSearchSettings(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    const values = Object.fromEntries(new FormData(form));
+    const payload = {
+      search_gender: values.search_gender,
+      search_age_min: Number(values.search_age_min),
+      search_age_max: Number(values.search_age_max),
+    };
+    if (
+      !Number.isInteger(payload.search_age_min)
+      || !Number.isInteger(payload.search_age_max)
+      || payload.search_age_min < 18
+      || payload.search_age_min > 100
+      || payload.search_age_max < 18
+      || payload.search_age_max > 100
+      || payload.search_age_max < payload.search_age_min
+    ) {
+      showToast("Проверь диапазон возраста: от 18 до 100 лет.");
+      return;
+    }
+    button.disabled = true;
+    try {
+      const settings = await api("/api/search-settings", {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      state.me = { ...state.me, ...settings };
+      state.profile = null;
+      showToast("Настройки поиска сохранены");
+      await discover(true);
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message);
+    }
+  }
+
   function renderProfileCard(profile) {
     main.innerHTML = `
+      ${renderSearchSettings()}
       <section class="discover-wrap">
         <p class="eyebrow">Твоя следующая история</p>
         <article class="profile-card">
@@ -154,6 +243,7 @@
           <button class="round-action like" id="like-profile" aria-label="Нравится">♥</button>
         </div>
       </section>`;
+    bindSearchSettings();
     if (profile.has_photo) {
       loadPhoto(profile.id, document.getElementById("discover-photo"));
     }
@@ -449,6 +539,16 @@
         <h2>${escapeHtml(profile.name)}, ${profile.age}</h2>
         <p>⌖ ${escapeHtml(profile.city)}</p>
         ${profile.description ? `<p>${escapeHtml(profile.description)}</p>` : ""}
+        <div class="profile-stats">
+          <div class="profile-stat">
+            <span class="profile-stat-value">${profile.match_count ?? 0}</span>
+            <span class="profile-stat-label">Мэтчи</span>
+          </div>
+          <div class="profile-stat">
+            <span class="profile-stat-value">${profile.like_count ?? 0}</span>
+            <span class="profile-stat-label">Лайков за всё время</span>
+          </div>
+        </div>
         <button class="primary-button" id="edit-profile">Редактировать анкету</button>
         <p class="profile-hint">Фотографию можно изменить в чате с ботом.</p>
       </section>`;

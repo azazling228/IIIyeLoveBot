@@ -31,6 +31,7 @@ from database import (
     delete_match,
     remove_like,
     reset_views,
+    update_search_settings,
     update_profile_fields,
 )
 
@@ -150,7 +151,16 @@ def create_miniapp_app(bot, bot_token):
         user = get_user(request["telegram_id"])
         if not user:
             return _json_error("Create a profile in the bot first.", 404)
-        return web.json_response(_profile_payload(user))
+        return web.json_response(
+            {
+                **_profile_payload(user),
+                "search_gender": user["search_gender"],
+                "search_age_min": user["search_age_min"],
+                "search_age_max": user["search_age_max"],
+                "match_count": len(get_matches(user["telegram_id"])),
+                "like_count": user["total_likes_received"],
+            }
+        )
 
     async def update_me(request):
         user_id = request["telegram_id"]
@@ -186,6 +196,46 @@ def create_miniapp_app(bot, bot_token):
         ):
             return _json_error("Profile not found.", 404)
         return web.json_response(_profile_payload(get_user(user_id)))
+
+    async def update_search(request):
+        user_id = request["telegram_id"]
+        if not get_user(user_id):
+            return _json_error("Create a profile in the bot first.", 404)
+        try:
+            payload = await request.json()
+        except (TypeError, json.JSONDecodeError):
+            return _json_error("Valid search settings are required.", 400)
+        if not isinstance(payload, dict) or set(payload) != {
+            "search_gender",
+            "search_age_min",
+            "search_age_max",
+        }:
+            return _json_error(
+                "Gender and minimum and maximum ages are required.", 400
+            )
+        search_gender = payload["search_gender"]
+        age_min = payload["search_age_min"]
+        age_max = payload["search_age_max"]
+        if not isinstance(search_gender, str) or search_gender not in {
+            "male",
+            "female",
+            "all",
+        }:
+            return _json_error("Gender must be male, female, or all.", 400)
+        if type(age_min) is not int or type(age_max) is not int:
+            return _json_error("Ages must be whole numbers.", 400)
+        if not 18 <= age_min <= 100 or not 18 <= age_max <= 100:
+            return _json_error("Ages must be between 18 and 100.", 400)
+        if age_max < age_min:
+            return _json_error("Maximum age cannot be less than minimum age.", 400)
+        update_search_settings(user_id, search_gender, age_min, age_max)
+        return web.json_response(
+            {
+                "search_gender": search_gender,
+                "search_age_min": age_min,
+                "search_age_max": age_max,
+            }
+        )
 
     async def discover(request):
         user = get_user(request["telegram_id"])
@@ -478,6 +528,7 @@ def create_miniapp_app(bot, bot_token):
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/me", me)
     app.router.add_patch("/api/me", update_me)
+    app.router.add_patch("/api/search-settings", update_search)
     app.router.add_get("/api/discover", discover)
     app.router.add_post("/api/discover/reset", reset_discovery)
     app.router.add_post("/api/discover/decision", discover_decision)

@@ -35,7 +35,8 @@ def init_database():
                 search_age_min INTEGER NOT NULL,
                 search_age_max INTEGER NOT NULL,
                 photo_file_id TEXT,
-                description TEXT
+                description TEXT,
+                total_likes_received INTEGER NOT NULL DEFAULT 0
             )
         """)
 
@@ -55,6 +56,12 @@ def init_database():
             connection.execute("""
                 ALTER TABLE users
                 ADD COLUMN description TEXT
+            """)
+        migrate_total_likes = "total_likes_received" not in column_names
+        if migrate_total_likes:
+            connection.execute("""
+                ALTER TABLE users
+                ADD COLUMN total_likes_received INTEGER NOT NULL DEFAULT 0
             """)
 
         # ======================================
@@ -80,6 +87,15 @@ def init_database():
                 UNIQUE(from_user, to_user)
             )
         """)
+        if migrate_total_likes:
+            connection.execute("""
+                UPDATE users
+                SET total_likes_received = (
+                    SELECT COUNT(*)
+                    FROM likes
+                    WHERE likes.to_user = users.telegram_id
+                )
+            """)
 
         # ======================================
         # МЭТЧИ
@@ -620,6 +636,15 @@ def add_like(
                 to_user,
             )
         )
+        if cursor.rowcount > 0:
+            connection.execute(
+                """
+                UPDATE users
+                SET total_likes_received = total_likes_received + 1
+                WHERE telegram_id = ?
+                """,
+                (to_user,),
+            )
         connection.commit()
         return cursor.rowcount > 0
     finally:
