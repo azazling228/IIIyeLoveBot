@@ -31,4 +31,5 @@ Profile statistics show current matches and the lifetime number of received
 likes. Existing likes are used as the initial count during migration; likes
 removed before this counter existed cannot be reconstructed. Search gender and
 age-range preferences can be updated from the discovery tab and are shared with
-the Telegram bot.
+the Telegram bot. Discovery settings open in a bottom sheet, and the light/dark
+theme choice is saved in the user's Mini App browser storage.

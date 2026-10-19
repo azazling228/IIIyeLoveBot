@@ -3,6 +3,7 @@
   const main = document.getElementById("main");
   const toastNode = document.getElementById("toast");
   const photoCache = new Map();
+  const themeStorageKey = "shue-miniapp-theme";
   const state = {
     tab: "discover",
     profile: null,
@@ -13,6 +14,7 @@
     me: null,
   };
 
+  applyTheme(localStorage.getItem(themeStorageKey) || "dark");
   telegram?.ready();
   telegram?.expand();
 
@@ -53,6 +55,27 @@
     showToast.timer = window.setTimeout(() => {
       toastNode.classList.remove("visible");
     }, 2600);
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+  }
+
+  function toggleTheme() {
+    const nextTheme = document.documentElement.dataset.theme === "dark"
+      ? "light"
+      : "dark";
+    localStorage.setItem(themeStorageKey, nextTheme);
+    applyTheme(nextTheme);
+    const button = document.getElementById("theme-toggle");
+    if (button) {
+      button.textContent = nextTheme === "dark" ? "☀️" : "☾";
+      button.setAttribute(
+        "aria-label",
+        nextTheme === "dark" ? "Включить светлую тему" : "Включить тёмную тему",
+      );
+      button.title = nextTheme === "dark" ? "Светлая тема" : "Тёмная тема";
+    }
   }
 
   function runAction(action) {
@@ -123,7 +146,7 @@
     state.profile = result.profile;
     if (!state.profile) {
       main.innerHTML = `
-        ${renderSearchSettings()}
+        ${renderDiscoveryToolbar()}
         <section class="empty-state">
           <div class="empty-icon">♡</div>
           <h2>Анкеты закончились</h2>
@@ -143,7 +166,23 @@
     renderProfileCard(state.profile);
   }
 
-  function renderSearchSettings() {
+  function renderDiscoveryToolbar() {
+    const isDark = document.documentElement.dataset.theme !== "light";
+    return `
+      <div class="discovery-toolbar">
+        <h1 class="page-heading">Поиск</h1>
+        <div class="discovery-tools">
+          <button class="icon-button theme-toggle" id="theme-toggle"
+            type="button" aria-label="${isDark ? "Включить светлую тему" : "Включить тёмную тему"}"
+            title="${isDark ? "Светлая тема" : "Тёмная тема"}">${isDark ? "☀️" : "☾"}</button>
+          <button class="icon-button settings-trigger" id="open-search-settings"
+            type="button" aria-label="Настройки поиска" aria-expanded="false">☷</button>
+        </div>
+      </div>
+      ${renderSearchSettingsModal()}`;
+  }
+
+  function renderSearchSettingsModal() {
     const profile = state.me;
     const genderOptions = [
       ["male", "Парни"],
@@ -151,40 +190,84 @@
       ["all", "Все"],
     ];
     return `
-      <details class="search-settings">
-        <summary>⚙️ Настройки поиска</summary>
-        <form class="search-settings-form" id="search-settings-form">
-          <label class="field-label" for="search-gender">Кого показывать</label>
-          <select class="chat-input profile-field" id="search-gender" name="search_gender">
-            ${genderOptions.map(([value, label]) => `
-              <option value="${value}" ${profile?.search_gender === value ? "selected" : ""}>
-                ${label}
-              </option>`).join("")}
-          </select>
-          <div class="age-range-fields">
-            <label class="age-field">
-              <span class="field-label">От</span>
-              <input class="chat-input" type="number" name="search_age_min"
-                min="18" max="100" required value="${profile?.search_age_min ?? 18}">
-            </label>
-            <label class="age-field">
-              <span class="field-label">До</span>
-              <input class="chat-input" type="number" name="search_age_max"
-                min="18" max="100" required value="${profile?.search_age_max ?? 100}">
-            </label>
+      <div class="settings-backdrop hidden" id="search-settings-layer">
+        <section class="search-settings-sheet" role="dialog" aria-modal="true"
+          aria-labelledby="search-settings-title">
+          <div class="sheet-handle" aria-hidden="true"></div>
+          <div class="sheet-heading">
+            <h2 id="search-settings-title">Настройки поиска</h2>
+            <button class="icon-button close-settings" id="close-search-settings"
+              type="button" aria-label="Закрыть настройки">×</button>
           </div>
-          <button class="primary-button search-save-button" type="submit">
-            Сохранить настройки
-          </button>
-        </form>
-      </details>`;
+          <form class="search-settings-form" id="search-settings-form">
+            <span class="field-label">Ищу</span>
+            <div class="gender-options" role="group" aria-label="Кого показывать">
+              ${genderOptions.map(([value, label]) => `
+                <label class="gender-option ${profile?.search_gender === value ? "selected" : ""}">
+                  <input type="radio" name="search_gender" value="${value}"
+                    ${profile?.search_gender === value ? "checked" : ""}>
+                  <span>${label}</span>
+                </label>`).join("")}
+            </div>
+            <span class="field-label age-heading">Возраст</span>
+            <div class="age-range-fields">
+              <label class="age-field">
+                <span class="field-label">От</span>
+                <input class="chat-input" type="number" name="search_age_min"
+                  min="18" max="100" required value="${profile?.search_age_min ?? 18}">
+              </label>
+              <label class="age-field">
+                <span class="field-label">До</span>
+                <input class="chat-input" type="number" name="search_age_max"
+                  min="18" max="100" required value="${profile?.search_age_max ?? 100}">
+              </label>
+            </div>
+            <button class="primary-button search-save-button" type="submit">
+              Сохранить настройки
+            </button>
+          </form>
+        </section>
+      </div>`;
   }
 
   function bindSearchSettings() {
+    document.getElementById("theme-toggle")?.addEventListener("click", toggleTheme);
+    const layer = document.getElementById("search-settings-layer");
+    const openButton = document.getElementById("open-search-settings");
+    const closeSettings = () => {
+      layer?.classList.add("hidden");
+      openButton?.setAttribute("aria-expanded", "false");
+      openButton?.focus();
+    };
+    openButton?.addEventListener("click", () => {
+      layer?.classList.remove("hidden");
+      openButton.setAttribute("aria-expanded", "true");
+      document.getElementById("close-search-settings")?.focus();
+    });
+    document.getElementById("close-search-settings")?.addEventListener(
+      "click",
+      closeSettings,
+    );
+    layer?.addEventListener("click", (event) => {
+      if (event.target === layer) closeSettings();
+    });
+    layer?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeSettings();
+    });
     document.getElementById("search-settings-form")?.addEventListener(
       "submit",
       saveSearchSettings,
     );
+    document.querySelectorAll('input[name="search_gender"]').forEach((input) => {
+      input.addEventListener("change", () => {
+        document.querySelectorAll(".gender-option").forEach((option) => {
+          option.classList.toggle(
+            "selected",
+            option.querySelector("input").checked,
+          );
+        });
+      });
+    });
   }
 
   async function saveSearchSettings(event) {
@@ -218,6 +301,7 @@
       state.me = { ...state.me, ...settings };
       state.profile = null;
       showToast("Настройки поиска сохранены");
+      document.getElementById("search-settings-layer")?.classList.add("hidden");
       await discover(true);
     } catch (error) {
       button.disabled = false;
@@ -227,9 +311,8 @@
 
   function renderProfileCard(profile) {
     main.innerHTML = `
-      ${renderSearchSettings()}
+      ${renderDiscoveryToolbar()}
       <section class="discover-wrap">
-        <p class="eyebrow">Твоя следующая история</p>
         <article class="profile-card">
           ${profile.has_photo ? `<img class="profile-photo" id="discover-photo" alt="">` : ""}
           <div class="profile-info">
@@ -539,19 +622,20 @@
         <h2>${escapeHtml(profile.name)}, ${profile.age}</h2>
         <p>⌖ ${escapeHtml(profile.city)}</p>
         ${profile.description ? `<p>${escapeHtml(profile.description)}</p>` : ""}
-        <div class="profile-stats">
-          <div class="profile-stat">
-            <span class="profile-stat-value">${profile.match_count ?? 0}</span>
-            <span class="profile-stat-label">Мэтчи</span>
-          </div>
-          <div class="profile-stat">
-            <span class="profile-stat-value">${profile.like_count ?? 0}</span>
-            <span class="profile-stat-label">Лайков за всё время</span>
-          </div>
-        </div>
         <button class="primary-button" id="edit-profile">Редактировать анкету</button>
         <p class="profile-hint">Фотографию можно изменить в чате с ботом.</p>
       </section>`;
+    main.insertAdjacentHTML("beforeend", `
+      <section class="profile-stats-card" aria-label="Статистика профиля">
+        <div class="profile-stat">
+          <span class="profile-stat-value">${profile.like_count ?? 0}</span>
+          <span class="profile-stat-label">Симпатии</span>
+        </div>
+        <div class="profile-stat">
+          <span class="profile-stat-value">${profile.match_count ?? 0}</span>
+          <span class="profile-stat-label">Мэтчи</span>
+        </div>
+      </section>`);
     const photo = document.getElementById("my-photo");
     if (photo) loadPhoto(profile.id, photo);
     document.getElementById("edit-profile").addEventListener(
