@@ -25,4 +25,5 @@ Requests without a valid Telegram launch context are rejected. Profile
 discovery, likes, matches, and messages use the same database tables as the
 bot, so matches and chat history stay shared. The Mini App also lets users edit
 their name, city, and description; profile photos can still be changed in the
-Telegram bot.
+Telegram bot. Deleting a match from the Mini App removes its shared match and
+message records, so the chat disappears from both the app and bot.

@@ -1086,6 +1086,7 @@ def delete_match(
                 (user_one, user_two, user_two, user_one),
             )
         connection.commit()
+        return match is not None
     finally:
         connection.close()
 

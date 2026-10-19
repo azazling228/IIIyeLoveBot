@@ -288,9 +288,14 @@
               <span class="match-heart">♥</span>
             </div>
             ${match.description ? `<p class="match-description">${escapeHtml(match.description)}</p>` : ""}
-            <button class="primary-button match-chat-button" data-open-match="${match.id}">
-              💬 Открыть чат
-            </button>
+            <div class="match-actions">
+              <button class="primary-button match-chat-button" data-open-match="${match.id}">
+                💬 Открыть чат
+              </button>
+              <button class="secondary-button delete-match-button" data-delete-match="${match.id}">
+                Удалить мэтч
+              </button>
+            </div>
           </article>`).join("")}
       </section>`;
     main.querySelectorAll("[data-photo-id]").forEach((image) => {
@@ -301,6 +306,38 @@
         runAction(() => openChat(Number(button.dataset.openMatch)));
       });
     });
+    main.querySelectorAll("[data-delete-match]").forEach((button) => {
+      button.addEventListener("click", () => {
+        runAction(() => removeMatch(Number(button.dataset.deleteMatch)));
+      });
+    });
+  }
+
+  async function removeMatch(partnerId) {
+    const confirmed = await confirmMatchRemoval();
+    if (!confirmed) return;
+    await api(`/api/matches/${partnerId}`, { method: "DELETE" });
+    showToast("Мэтч и переписка удалены");
+    await loadMatches();
+    const chats = await api("/api/chats");
+    updateBadges(
+      null,
+      chats.chats.reduce((total, chat) => total + chat.unread_count, 0),
+    );
+  }
+
+  function confirmMatchRemoval() {
+    if (telegram?.showConfirm) {
+      return new Promise((resolve) => {
+        telegram.showConfirm(
+          "Удалить мэтч и всю переписку у вас обоих? Это действие нельзя отменить.",
+          resolve,
+        );
+      });
+    }
+    return Promise.resolve(window.confirm(
+      "Удалить мэтч и всю переписку у вас обоих? Это действие нельзя отменить.",
+    ));
   }
 
   async function openChat(partnerId) {
@@ -308,10 +345,12 @@
     state.partner = { id: partnerId };
     document.querySelector(".bottom-nav").classList.add("hidden");
     await refreshChat(true);
-    state.poll = window.setInterval(
-      () => refreshChat(false).catch((error) => showToast(error.message)),
-      5000,
-    );
+    if (state.partner) {
+      state.poll = window.setInterval(
+        () => refreshChat(false).catch((error) => showToast(error.message)),
+        5000,
+      );
+    }
   }
 
   async function refreshChat(initial) {
@@ -321,7 +360,20 @@
     const wasFocused = document.activeElement === oldInput;
     const oldList = main.querySelector(".chat-messages");
     const wasAtBottom = !oldList || oldList.scrollHeight - oldList.scrollTop - oldList.clientHeight < 48;
-    const result = await api(`/api/chats/${state.partner.id}/messages`);
+    let result;
+    try {
+      result = await api(`/api/chats/${state.partner.id}/messages`);
+    } catch (error) {
+      if (error.message.includes("This chat is not available.")) {
+        window.clearInterval(state.poll);
+        state.poll = null;
+        state.partner = null;
+        showToast("Мэтч удалён, переписка больше недоступна");
+        await loadChats();
+        return;
+      }
+      throw error;
+    }
     state.partner = result.partner;
     state.messages = result.messages;
     renderChat();
@@ -391,7 +443,6 @@
 
   function renderProfile(profile) {
     main.innerHTML = `
-      <p class="eyebrow">Рад знакомству</p>
       <h1 class="page-heading">Твоя анкета</h1>
       <section class="profile-panel">
         ${profile.has_photo ? `<img class="avatar" id="my-photo" alt="">` : `<div class="avatar"></div>`}

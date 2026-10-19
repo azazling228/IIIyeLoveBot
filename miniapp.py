@@ -28,6 +28,7 @@ from database import (
     has_viewed,
     is_blocked,
     mark_messages_read,
+    delete_match,
     remove_like,
     reset_views,
     update_profile_fields,
@@ -345,6 +346,26 @@ def create_miniapp_app(bot, bot_token):
             }
         )
 
+    async def delete_match_endpoint(request):
+        user_id = request["telegram_id"]
+        try:
+            partner_id = int(request.match_info["partner_id"])
+        except ValueError:
+            return _json_error("Invalid match.", 400)
+        if partner_id == user_id:
+            return _json_error("Invalid match.", 400)
+        partner = get_user(partner_id)
+        if not partner or not delete_match(user_id, partner_id):
+            return _json_error("This match is no longer available.", 404)
+        try:
+            await bot.send_message(
+                partner_id,
+                "💔 Ваш мэтч был удалён. История переписки больше недоступна.",
+            )
+        except TelegramAPIError:
+            logging.exception("Failed to notify user about removed Mini App match")
+        return web.json_response({"deleted": True})
+
     async def reset_discovery(request):
         reset_views(request["telegram_id"])
         return await discover(request)
@@ -465,6 +486,10 @@ def create_miniapp_app(bot, bot_token):
     app.router.add_post("/api/likes/respond", respond_to_like)
     app.router.add_get("/api/chats", chats)
     app.router.add_get("/api/matches", matches)
+    app.router.add_delete(
+        "/api/matches/{partner_id}",
+        delete_match_endpoint,
+    )
     app.router.add_get("/api/chats/{partner_id}/messages", chat_messages)
     app.router.add_post("/api/chats/{partner_id}/messages", send_chat_message)
     return app
