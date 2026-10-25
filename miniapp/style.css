@@ -379,6 +379,8 @@ button { color: inherit; }
 .chat-back { border: 0; background: none; color: var(--rose-dark); font-size: 25px; }
 .chat-messages { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 16px 0; }
 .bubble {
+  display: grid;
+  gap: 6px;
   max-width: 82%;
   padding: 11px 14px;
   border-radius: 18px;
@@ -398,7 +400,28 @@ button { color: inherit; }
   box-shadow: 0 0 16px rgba(255, 79, 200, .2);
 }
 .bubble.theirs { align-self: flex-start; border-bottom-left-radius: 6px; }
-.chat-form { display: flex; gap: 8px; padding: 10px 0; }
+.chat-form { display: flex; align-items: center; gap: 8px; padding: 10px 0 4px; }
+.attach-button {
+  position: relative;
+  display: grid;
+  width: 44px;
+  height: 46px;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--rose);
+  background: var(--surface);
+  font-size: 25px;
+  cursor: pointer;
+}
+.chat-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
 .chat-input {
   min-width: 0;
   flex: 1;
@@ -408,6 +431,33 @@ button { color: inherit; }
   outline: none;
   color: var(--ink);
   background: #171020;
+}
+.chat-attachment {
+  display: block;
+  max-width: 100%;
+  border-radius: 12px;
+}
+.chat-image { max-height: 340px; object-fit: contain; }
+.chat-audio { width: min(280px, 100%); min-height: 42px; }
+.chat-caption { overflow-wrap: anywhere; }
+.chat-attachment-pending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 4px 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.chat-attachment-pending span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attachment-pending button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 20px;
 }
 .chat-input:focus { border-color: var(--rose); box-shadow: 0 0 12px rgba(255, 79, 200, .16); }
 .send-button {

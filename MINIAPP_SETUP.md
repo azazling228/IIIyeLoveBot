@@ -41,3 +41,8 @@ database records and associated matches and messages; it cannot remove messages
 already delivered to Telegram chat histories. The public `/legal` page contains
 the service rules and privacy information. Notification preferences are
 respected by both the Mini App and bot notification handlers.
+Both chat interfaces support text, photo, and audio messages. Mini App
+attachments up to 20 MB are stored with the shared message history; Telegram
+media sent directly in the bot is referenced by its Telegram file ID. Incoming
+chat notifications use the sender's profile name rather than their Telegram
+account display name.

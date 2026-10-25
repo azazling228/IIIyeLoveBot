@@ -3,6 +3,7 @@
   const main = document.getElementById("main");
   const toastNode = document.getElementById("toast");
   const photoCache = new Map();
+  const mediaCache = new Map();
   const themeStorageKey = "shue-miniapp-theme";
   const state = {
     tab: "discover",
@@ -12,6 +13,7 @@
     messages: [],
     poll: null,
     me: null,
+    pendingFile: null,
   };
 
   applyTheme(localStorage.getItem(themeStorageKey) || "dark");
@@ -37,13 +39,24 @@
       ...options,
       headers: {
         Authorization: `tma ${initData}`,
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(options.body && !(options.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...options.headers,
       },
     });
-    const result = response.status === 204 ? null : await response.json();
+    let result = null;
+    if (response.status !== 204) {
+      try {
+        result = await response.json();
+      } catch (error) {
+        if (response.ok) throw error;
+      }
+    }
     if (!response.ok) {
-      throw new Error(result?.error || "Не удалось выполнить запрос.");
+      throw new Error(
+        result?.error || `Не удалось выполнить запрос (${response.status}).`,
+      );
     }
     return result;
   }
@@ -110,6 +123,28 @@
       image.src = objectUrl;
     } catch (error) {
       console.error("Could not load profile photo", error);
+    }
+  }
+
+  async function loadChatMedia(partnerId, messageId, element) {
+    const cacheKey = `${partnerId}:${messageId}`;
+    if (mediaCache.has(cacheKey)) {
+      element.src = mediaCache.get(cacheKey);
+      return;
+    }
+    try {
+      const initData = telegram?.initData;
+      if (!initData) return;
+      const response = await fetch(
+        `/api/chats/${partnerId}/messages/${messageId}/media`,
+        { headers: { Authorization: `tma ${initData}` } },
+      );
+      if (!response.ok) return;
+      const objectUrl = URL.createObjectURL(await response.blob());
+      mediaCache.set(cacheKey, objectUrl);
+      element.src = objectUrl;
+    } catch (error) {
+      console.error("Could not load chat attachment", error);
     }
   }
 
@@ -515,6 +550,8 @@
 
   async function openChat(partnerId) {
     window.clearInterval(state.poll);
+    state.pendingFile = null;
+    state.messages = [];
     state.partner = { id: partnerId };
     document.querySelector(".bottom-nav").classList.add("hidden");
     await refreshChat(true);
@@ -548,9 +585,22 @@
       throw error;
     }
     state.partner = result.partner;
+    const previousMessages = state.messages;
     state.messages = result.messages;
-    renderChat();
+    const isAppend = !initial
+      && main.querySelector(".chat-messages")
+      && previousMessages.length <= result.messages.length
+      && previousMessages.every(
+        (message, index) => message.id === result.messages[index]?.id,
+      );
+    if (isAppend) {
+      const addedMessages = result.messages.slice(previousMessages.length);
+      if (addedMessages.length) appendChatMessages(addedMessages);
+    } else {
+      renderChat();
+    }
     const newInput = document.getElementById("chat-input");
+    if (!newInput) return;
     newInput.value = draft;
     if (wasFocused) newInput.focus();
     const newList = main.querySelector(".chat-messages");
@@ -559,8 +609,7 @@
 
   function renderChat() {
     const partner = state.partner;
-    const messages = state.messages.map((message) => `
-      <div class="bubble ${message.sender_id === state.me?.id ? "mine" : "theirs"}">${escapeHtml(message.text)}</div>`).join("");
+    const messages = state.messages.map(renderChatMessage).join("");
     main.innerHTML = `
       <section class="chat-screen">
         <header class="chat-header">
@@ -573,33 +622,106 @@
         </header>
         <div class="chat-messages">${messages || `<p class="person-preview">Напиши первое сообщение — начните знакомство ❤️</p>`}</div>
         <form class="chat-form" id="chat-form">
+          <label class="attach-button" aria-label="Прикрепить фото или аудио">
+            ＋
+            <input id="chat-file" class="chat-file-input" type="file"
+              accept="image/*,audio/*" aria-label="Выбрать фото или аудиофайл">
+          </label>
           <input class="chat-input" id="chat-input" maxlength="3900" autocomplete="off" placeholder="Сообщение…">
           <button class="send-button" aria-label="Отправить">➤</button>
         </form>
+        <div class="chat-attachment-pending ${state.pendingFile ? "" : "hidden"}" id="chat-attachment-pending">
+          <span id="chat-attachment-name">${escapeHtml(state.pendingFile?.name || "")}</span>
+          <button id="clear-chat-attachment" type="button" aria-label="Убрать файл">×</button>
+        </div>
       </section>`;
     document.getElementById("back-chats").addEventListener("click", loadChats);
     document.getElementById("chat-form").addEventListener("submit", sendChatMessage);
+    document.getElementById("chat-file").addEventListener("change", (event) => {
+      state.pendingFile = event.currentTarget.files[0] || null;
+      const pending = document.getElementById("chat-attachment-pending");
+      pending.classList.toggle("hidden", !state.pendingFile);
+      document.getElementById("chat-attachment-name").textContent =
+        state.pendingFile?.name || "";
+    });
+    document.getElementById("clear-chat-attachment").addEventListener("click", () => {
+      state.pendingFile = null;
+      document.getElementById("chat-file").value = "";
+      document.getElementById("chat-attachment-pending").classList.add("hidden");
+    });
+    main.querySelectorAll("[data-chat-media-id]").forEach((element) => {
+      loadChatMedia(partner.id, element.dataset.chatMediaId, element);
+    });
     const photo = document.getElementById("chat-photo");
     if (photo) loadPhoto(partner.id, photo);
     const list = main.querySelector(".chat-messages");
     list.scrollTop = list.scrollHeight;
   }
 
+  function renderChatMessage(message) {
+    const attachment = message.media_type === "photo"
+      ? `<img class="chat-attachment chat-image" data-chat-media-id="${message.id}" alt="Фото">`
+      : message.media_type === "audio"
+        ? `<audio class="chat-attachment chat-audio" data-chat-media-id="${message.id}" controls preload="metadata"></audio>`
+        : "";
+    return `
+      <div class="bubble ${message.sender_id === state.me?.id ? "mine" : "theirs"}">
+        ${attachment}
+        ${message.text ? `<div class="chat-caption">${escapeHtml(message.text)}</div>` : ""}
+      </div>`;
+  }
+
+  function appendChatMessages(messages) {
+    const list = main.querySelector(".chat-messages");
+    if (!list) return;
+    const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    if (!state.messages.length) return;
+    list.querySelector(".person-preview")?.remove();
+    list.insertAdjacentHTML("beforeend", messages.map(renderChatMessage).join(""));
+    messages.forEach((message) => {
+      if (message.media_type === "text") return;
+      const element = list.querySelector(`[data-chat-media-id="${message.id}"]`);
+      if (element) loadChatMedia(state.partner.id, message.id, element);
+    });
+    if (wasAtBottom) list.scrollTop = list.scrollHeight;
+  }
+
   async function sendChatMessage(event) {
     event.preventDefault();
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
-    if (!text) return;
+    const file = state.pendingFile;
+    if (!text && !file) return;
+    if (file && file.size > 20 * 1024 * 1024) {
+      showToast("Размер файла не должен превышать 20 МБ");
+      return;
+    }
+    if (file && text.length > 900) {
+      showToast("Подпись к файлу может содержать до 900 символов");
+      return;
+    }
     input.disabled = true;
     try {
-      const result = await api(`/api/chats/${state.partner.id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ text }),
-      });
+      let result;
+      if (file) {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("caption", text);
+        result = await api(`/api/chats/${state.partner.id}/media`, {
+          method: "POST",
+          body: form,
+        });
+      } else {
+        result = await api(`/api/chats/${state.partner.id}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ text }),
+        });
+      }
       if (result.filtered) {
         showToast("Сообщение скрыто фильтром собеседника");
         return;
       }
+      state.pendingFile = null;
       input.value = "";
       if (result.notification_warning) showToast(result.notification_warning);
       else if (result.notification_disabled) {

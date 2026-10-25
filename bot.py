@@ -1491,7 +1491,15 @@ async def open_chat(
                 if stored_message["sender_id"] == current_user_id
                 else other_user["name"]
             )
-            text = f"{sender_name}: {stored_message['text']}"
+            if stored_message["media_type"] == "photo":
+                content = "📷 Фото"
+            elif stored_message["media_type"] == "audio":
+                content = "🎧 Аудио"
+            else:
+                content = stored_message["text"]
+            if stored_message["text"]:
+                content += f"\n{stored_message['text']}"
+            text = f"{sender_name}: {content}"
             for start in range(0, len(text), 3900):
                 await callback.message.answer(text[start:start + 3900])
 
@@ -1513,18 +1521,51 @@ async def send_chat_message(
             reply_markup=main_keyboard,
         )
         return
-    if not message.text:
-        await message.answer(
-            "Пока в чате можно отправлять "
-            "только текстовые сообщения."
+    media_type = "text"
+    media_file_id = None
+    media_mime_type = None
+    media_file_name = None
+    if message.photo:
+        media_type = "photo"
+        media_file_id = message.photo[-1].file_id
+        media_mime_type = "image/jpeg"
+        media_file_name = "photo.jpg"
+    elif message.audio:
+        media_type = "audio"
+        media_file_id = message.audio.file_id
+        media_mime_type = message.audio.mime_type or "audio/mpeg"
+        media_file_name = message.audio.file_name or "audio"
+    elif message.voice:
+        media_type = "audio"
+        media_file_id = message.voice.file_id
+        media_mime_type = message.voice.mime_type or "audio/ogg"
+        media_file_name = "voice.ogg"
+    elif (
+        message.document
+        and message.document.mime_type
+        and (
+            message.document.mime_type.startswith("image/")
+            or message.document.mime_type.startswith("audio/")
         )
-        return
-    text = message.text.strip()
-    if not text:
+    ):
+        media_type = (
+            "photo"
+            if message.document.mime_type.startswith("image/")
+            else "audio"
+        )
+        media_file_id = message.document.file_id
+        media_mime_type = message.document.mime_type
+        media_file_name = message.document.file_name or "attachment"
+
+    text = (message.text or message.caption or "").strip()
+    if not text and media_type == "text":
+        await message.answer(
+            "В чате можно отправлять текст, фотографии и аудиофайлы."
+        )
         return
     if len(text) > 4000:
         await message.answer(
-            "Сообщение слишком длинное.\n"
+            "Текст сообщения слишком длинный.\n"
             "Максимум — 4000 символов."
         )
         return
@@ -1552,11 +1593,23 @@ async def send_chat_message(
             "Сообщение не отправлено: собеседник настроил фильтр сообщений."
         )
         return
+    sender = get_user(message.from_user.id)
+    if not sender:
+        await state.clear()
+        await message.answer(
+            "Анкета отправителя больше недоступна.",
+            reply_markup=main_keyboard,
+        )
+        return
     add_message(
         match_id=match_id,
         sender_id=message.from_user.id,
         receiver_id=partner_id,
         text=text,
+        media_type=media_type,
+        media_file_id=media_file_id,
+        media_mime_type=media_mime_type,
+        media_file_name=media_file_name,
     )
     partner = get_user(partner_id)
     if partner and not partner["notify_messages"]:
@@ -1566,26 +1619,72 @@ async def send_chat_message(
         )
         return
     try:
-        await bot.send_message(
-            partner_id,
-            f"💬 Сообщение от {message.from_user.full_name}:",
-        )
-        await bot.send_message(
-            partner_id,
-            text,
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="💬 Ответить",
-                            callback_data=(
-                                f"chat_{message.from_user.id}"
-                            ),
-                        )
-                    ]
+        reply_markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💬 Ответить",
+                        callback_data=f"chat_{message.from_user.id}",
+                    )
                 ]
-            ),
+            ]
         )
+        if media_type == "photo" and message.photo:
+            caption = f"📷 Фото от {sender['name'][:100]}"
+            if text:
+                caption += f"\n\n{text}"
+            await bot.send_photo(
+                partner_id,
+                media_file_id,
+                caption=caption[:1024],
+                reply_markup=reply_markup,
+            )
+        elif media_type == "photo":
+            caption = f"📷 Фото от {sender['name'][:100]}"
+            if text:
+                caption += f"\n\n{text}"
+            await bot.send_document(
+                partner_id,
+                media_file_id,
+                caption=caption[:1024],
+                reply_markup=reply_markup,
+            )
+        elif media_type == "audio" and message.audio:
+            caption = f"🎧 Аудио от {sender['name'][:100]}"
+            if text:
+                caption += f"\n\n{text}"
+            await bot.send_audio(
+                partner_id,
+                media_file_id,
+                caption=caption[:1024],
+                reply_markup=reply_markup,
+            )
+        elif media_type == "audio" and message.voice:
+            caption = f"🎧 Аудио от {sender['name'][:100]}"
+            if text:
+                caption += f"\n\n{text}"
+            await bot.send_voice(
+                partner_id,
+                media_file_id,
+                caption=caption[:1024],
+                reply_markup=reply_markup,
+            )
+        elif media_type == "audio":
+            caption = f"🎧 Аудио от {sender['name'][:100]}"
+            if text:
+                caption += f"\n\n{text}"
+            await bot.send_document(
+                partner_id,
+                media_file_id,
+                caption=caption[:1024],
+                reply_markup=reply_markup,
+            )
+        else:
+            await bot.send_message(
+                partner_id,
+                f"💬 Сообщение от {sender['name'][:100]}:\n\n{text}",
+                reply_markup=reply_markup,
+            )
         await message.answer(f"✅ Отправлено {partner_name}.")
     except TelegramAPIError:
         logging.exception("Failed to deliver a chat message")

@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 from io import BytesIO
 from pathlib import Path
@@ -10,7 +11,7 @@ from urllib.parse import parse_qsl
 
 from aiohttp import web
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
 from database import (
     add_like,
@@ -20,6 +21,7 @@ from database import (
     create_match,
     get_incoming_likes,
     get_match,
+    get_message,
     get_matches,
     get_messages,
     get_next_profile,
@@ -37,12 +39,14 @@ from database import (
     update_profile_preferences,
     update_search_settings,
     update_profile_fields,
+    update_message_media_file_id,
 )
 
 
 MINIAPP_DIR = Path(__file__).resolve().parent / "miniapp"
 MAX_INIT_DATA_AGE = 60 * 60 * 24
 MAX_CHAT_MESSAGE_LENGTH = 3900
+MAX_CHAT_MEDIA_SIZE = 20 * 1024 * 1024
 
 
 def validate_init_data(init_data, bot_token, now=None):
@@ -143,7 +147,10 @@ def create_miniapp_app(bot, bot_token):
         request["telegram_id"] = telegram_user["id"]
         return await handler(request)
 
-    app = web.Application(middlewares=[telegram_auth_middleware])
+    app = web.Application(
+        middlewares=[telegram_auth_middleware],
+        client_max_size=MAX_CHAT_MEDIA_SIZE + 64 * 1024,
+    )
 
     async def index(_request):
         return web.FileResponse(MINIAPP_DIR / "index.html")
@@ -549,6 +556,12 @@ def create_miniapp_app(bot, bot_token):
                         "id": item["id"],
                         "sender_id": item["sender_id"],
                         "text": item["text"],
+                        "media_type": item["media_type"],
+                        "media_url": (
+                            f"/api/chats/{partner_id}/messages/{item['id']}/media"
+                            if item["media_type"] != "text"
+                            else None
+                        ),
                         "created_at": item["created_at"],
                     }
                     for item in history
@@ -609,6 +622,152 @@ def create_miniapp_app(bot, bot_token):
             response["notification_disabled"] = True
         return web.json_response(response, status=201)
 
+    async def send_chat_media(request):
+        user_id = request["telegram_id"]
+        try:
+            partner_id = int(request.match_info["partner_id"])
+            form = await request.post()
+            upload = form.get("file")
+            caption = form.get("caption", "").strip()
+        except (ValueError, TypeError, AttributeError):
+            return _json_error("A valid image or audio file is required.", 400)
+        if not upload or not hasattr(upload, "file"):
+            return _json_error("Choose an image or audio file to send.", 400)
+        if not isinstance(caption, str):
+            return _json_error("Message caption must be text.", 400)
+        if len(caption) > 900:
+            return _json_error("A media caption can contain up to 900 characters.", 400)
+        try:
+            media_data = upload.file.read(MAX_CHAT_MEDIA_SIZE + 1)
+        except OSError:
+            logging.exception("Failed to read Mini App chat attachment")
+            return _json_error("Could not read the selected file.", 400)
+        if not media_data or len(media_data) > MAX_CHAT_MEDIA_SIZE:
+            return _json_error("Files must be between 1 byte and 20 MB.", 400)
+
+        media_mime_type = (upload.content_type or "").lower()
+        if not re.fullmatch(r"(?:image|audio)/[a-z0-9][a-z0-9.+-]*", media_mime_type):
+            return _json_error("The selected file has an invalid media type.", 400)
+        if media_mime_type.startswith("image/"):
+            media_type = "photo"
+        elif media_mime_type.startswith("audio/"):
+            media_type = "audio"
+        else:
+            return _json_error("Only image and audio files can be sent.", 400)
+
+        match = get_match(user_id, partner_id)
+        partner = get_user(partner_id)
+        user = get_user(user_id)
+        if not match or not partner or not user or is_blocked(user_id, partner_id):
+            return _json_error("This chat is not available.", 404)
+        if message_matches_banned_words(caption, partner_id):
+            return web.json_response({"filtered": True}, status=200)
+
+        raw_filename = upload.filename or ("photo" if media_type == "photo" else "audio")
+        media_file_name = re.sub(
+            r"[\x00-\x1f\x7f]",
+            "",
+            raw_filename.replace("\\", "/").rsplit("/", 1)[-1],
+        )[:128]
+        if not media_file_name:
+            media_file_name = "photo" if media_type == "photo" else "audio"
+        message_id = add_message(
+            match["id"],
+            user_id,
+            partner_id,
+            caption,
+            media_type=media_type,
+            media_data=media_data,
+            media_mime_type=media_mime_type,
+            media_file_name=media_file_name,
+        )
+        response = {"message_id": message_id}
+        if partner["notify_messages"]:
+            notification_caption = (
+                f"{'📷 Фото' if media_type == 'photo' else '🎧 Аудио'} "
+                f"от {user['name'][:100]}"
+            )
+            if caption:
+                notification_caption += f"\n\n{caption}"
+            reply_markup = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="💬 Ответить",
+                            callback_data=f"chat_{user_id}",
+                        )
+                    ]
+                ]
+            )
+            try:
+                input_file = BufferedInputFile(media_data, filename=media_file_name)
+                if media_type == "photo" and media_mime_type in {
+                    "image/jpeg",
+                    "image/png",
+                }:
+                    sent = await bot.send_photo(
+                        partner_id,
+                        input_file,
+                        caption=notification_caption[:1024],
+                        reply_markup=reply_markup,
+                    )
+                    stored_file_id = sent.photo[-1].file_id
+                else:
+                    sent = await bot.send_document(
+                        partner_id,
+                        input_file,
+                        caption=notification_caption[:1024],
+                        reply_markup=reply_markup,
+                    )
+                    stored_file_id = sent.document.file_id
+                update_message_media_file_id(message_id, stored_file_id)
+            except TelegramAPIError:
+                logging.exception("Failed to deliver Mini App chat attachment")
+                response["notification_warning"] = (
+                    "Файл сохранён в чате, но Telegram не смог доставить его собеседнику."
+                )
+        else:
+            response["notification_disabled"] = True
+        return web.json_response(response, status=201)
+
+    async def chat_media(request):
+        user_id = request["telegram_id"]
+        try:
+            partner_id = int(request.match_info["partner_id"])
+            message_id = int(request.match_info["message_id"])
+        except ValueError:
+            return _json_error("Invalid chat attachment.", 400)
+        match = get_match(user_id, partner_id)
+        if not match or is_blocked(user_id, partner_id):
+            return _json_error("This chat is not available.", 404)
+        message = get_message(match["id"], message_id)
+        if not message or message["media_type"] not in {"photo", "audio"}:
+            return _json_error("Attachment not found.", 404)
+
+        if message["media_data"] is not None:
+            media_data = message["media_data"]
+        elif message["media_file_id"]:
+            try:
+                telegram_file = await bot.get_file(message["media_file_id"])
+                image = BytesIO()
+                await bot.download_file(telegram_file.file_path, destination=image)
+                media_data = image.getvalue()
+            except TelegramAPIError:
+                logging.exception("Failed to retrieve chat attachment from Telegram")
+                return _json_error("Could not load this attachment.", 502)
+        else:
+            return _json_error("Attachment is unavailable.", 404)
+
+        content_type = message["media_mime_type"] or "application/octet-stream"
+        return web.Response(
+            body=media_data,
+            content_type=content_type,
+            headers={
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     async def _notify_like(recipient_id, sender_id):
         sender = get_user(sender_id)
         recipient = get_user(recipient_id)
@@ -667,6 +826,11 @@ def create_miniapp_app(bot, bot_token):
     )
     app.router.add_get("/api/chats/{partner_id}/messages", chat_messages)
     app.router.add_post("/api/chats/{partner_id}/messages", send_chat_message)
+    app.router.add_post("/api/chats/{partner_id}/media", send_chat_media)
+    app.router.add_get(
+        "/api/chats/{partner_id}/messages/{message_id}/media",
+        chat_media,
+    )
     return app
 
 

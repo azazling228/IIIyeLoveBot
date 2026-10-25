@@ -136,6 +136,11 @@ def init_database():
                 sender_id INTEGER NOT NULL,
                 receiver_id INTEGER NOT NULL,
                 text TEXT NOT NULL,
+                media_type TEXT NOT NULL DEFAULT 'text',
+                media_file_id TEXT,
+                media_data BLOB,
+                media_mime_type TEXT,
+                media_file_name TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 read_at TIMESTAMP
             )
@@ -144,11 +149,23 @@ def init_database():
         message_columns = connection.execute(
             "PRAGMA table_info(messages)"
         ).fetchall()
-        if "read_at" not in {column["name"] for column in message_columns}:
+        message_column_names = {column["name"] for column in message_columns}
+        if "read_at" not in message_column_names:
             connection.execute("""
                 ALTER TABLE messages
                 ADD COLUMN read_at TIMESTAMP
             """)
+        for column_name, column_definition in (
+            ("media_type", "TEXT NOT NULL DEFAULT 'text'"),
+            ("media_file_id", "TEXT"),
+            ("media_data", "BLOB"),
+            ("media_mime_type", "TEXT"),
+            ("media_file_name", "TEXT"),
+        ):
+            if column_name not in message_column_names:
+                connection.execute(
+                    f"ALTER TABLE messages ADD COLUMN {column_name} {column_definition}"
+                )
 
         connection.execute("""
             CREATE TABLE IF NOT EXISTS skips (
@@ -955,7 +972,12 @@ def add_message(
     match_id,
     sender_id,
     receiver_id,
-    text
+    text,
+    media_type="text",
+    media_file_id=None,
+    media_data=None,
+    media_mime_type=None,
+    media_file_name=None,
 ):
     connection = get_connection()
     try:
@@ -965,19 +987,50 @@ def add_message(
                 match_id,
                 sender_id,
                 receiver_id,
-                text
+                text,
+                media_type,
+                media_file_id,
+                media_data,
+                media_mime_type,
+                media_file_name
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 match_id,
                 sender_id,
                 receiver_id,
                 text,
+                media_type,
+                media_file_id,
+                media_data,
+                media_mime_type,
+                media_file_name,
             )
         )
         connection.commit()
         return cursor.lastrowid
+    finally:
+        connection.close()
+
+def get_message(match_id, message_id):
+    connection = get_connection()
+    try:
+        return connection.execute(
+            "SELECT * FROM messages WHERE match_id = ? AND id = ?",
+            (match_id, message_id),
+        ).fetchone()
+    finally:
+        connection.close()
+
+def update_message_media_file_id(message_id, media_file_id):
+    connection = get_connection()
+    try:
+        connection.execute(
+            "UPDATE messages SET media_file_id = ? WHERE id = ?",
+            (media_file_id, message_id),
+        )
+        connection.commit()
     finally:
         connection.close()
 
@@ -995,7 +1048,18 @@ def get_messages(
             """
             SELECT *
             FROM (
-                SELECT *
+                SELECT
+                    id,
+                    match_id,
+                    sender_id,
+                    receiver_id,
+                    text,
+                    media_type,
+                    media_file_id,
+                    media_mime_type,
+                    media_file_name,
+                    created_at,
+                    read_at
                 FROM messages
                 WHERE match_id = ?
                 ORDER BY id DESC
