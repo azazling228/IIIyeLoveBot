@@ -116,6 +116,9 @@ class Registration(StatesGroup):
 class ChatState(StatesGroup):
     chatting = State()
 
+class LikeMessageState(StatesGroup):
+    waiting = State()
+
 # ==========================================
 # КЛАВИАТУРЫ
 # ==========================================
@@ -258,6 +261,10 @@ def create_like_back_keyboard(profile_id):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(
+                    text="💌 Ответить сообщением",
+                    callback_data=f"like_message_{profile_id}",
+                ),
                 InlineKeyboardButton(
                     text="❤️ Лайкнуть в ответ",
                     callback_data=f"like_back_{profile_id}",
@@ -847,6 +854,8 @@ async def show_next_incoming_like(message: Message, user_id):
     )
     if profile["description"]:
         caption += f"\n\n📝 {profile['description']}"
+    if profile["like_message"]:
+        caption += f"\n\n💌 Сообщение для тебя: {profile['like_message']}"
     keyboard = create_like_back_keyboard(profile["telegram_id"])
     if profile["photo_file_id"]:
         await message.answer_photo(
@@ -926,6 +935,108 @@ async def skip_profile(callback: CallbackQuery):
 # ==========================================
 # ЛАЙКНУТЬ В ОТВЕТ
 # ==========================================
+
+@dp.callback_query(
+    lambda callback: callback.data.startswith("like_message_")
+)
+async def start_like_message(callback: CallbackQuery, state: FSMContext):
+    try:
+        profile_id = int(callback.data.replace("like_message_", ""))
+    except ValueError:
+        await callback.answer("Ошибка анкеты.")
+        return
+    user = get_user(callback.from_user.id)
+    if not user or not get_user(profile_id):
+        await callback.answer("Анкета больше недоступна.")
+        return
+    if not has_like(profile_id, user["telegram_id"]):
+        await callback.answer("Этот лайк уже недоступен.")
+        return
+    await state.clear()
+    await state.update_data(like_target_id=profile_id)
+    await state.set_state(LikeMessageState.waiting)
+    await callback.answer()
+    await callback.message.answer(
+        "Напиши одно сообщение для этого человека — оно придёт вместе "
+        "с уведомлением о лайке.\n\n"
+        "До 500 символов. Чтобы отменить, напиши «Отмена».",
+    )
+
+@dp.message(LikeMessageState.waiting)
+async def send_like_message(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Напиши сообщение текстом или «Отмена».")
+        return
+    text = message.text.strip()
+    if text.casefold() == "отмена":
+        await state.clear()
+        await message.answer("Отправка сообщения к лайку отменена.")
+        return
+    if not text or len(text) > 500:
+        await message.answer("Сообщение должно содержать от 1 до 500 символов.")
+        return
+    data = await state.get_data()
+    profile_id = data.get("like_target_id")
+    user = get_user(message.from_user.id)
+    profile = get_user(profile_id) if profile_id else None
+    if (
+        not user
+        or not profile
+        or not has_like(profile_id, user["telegram_id"])
+        or is_blocked(user["telegram_id"], profile_id)
+    ):
+        await state.clear()
+        await message.answer("Этот лайк больше недоступен.")
+        return
+    add_like(user["telegram_id"], profile_id, text)
+    await state.clear()
+    if is_mutual_like(user["telegram_id"], profile_id):
+        new_match = create_match(user["telegram_id"], profile_id)
+        await message.answer(
+            f"💘 Мэтч с {profile['name']}! Сообщение отправлено.",
+            reply_markup=create_match_action_keyboard(profile_id),
+        )
+        if new_match and profile["notify_matches"]:
+            try:
+                await bot.send_message(
+                    profile_id,
+                    f"💘 МЭТЧ!\n\nТы понравился(ась) "
+                    f"{user['name']}! ❤️\n\nТеперь можно начать общаться.",
+                    reply_markup=create_match_action_keyboard(
+                        user["telegram_id"]
+                    ),
+                )
+            except TelegramAPIError:
+                logging.exception("Failed to notify user about like-message match")
+        return
+    await message.answer("❤️ Лайк с сообщением отправлен!")
+    if profile["notify_likes"]:
+        caption = (
+            "❤️ Тебе поставили лайк!\n\n"
+            f"👤 {user['name']}\n"
+            f"🎂 {user['age']} лет\n"
+            f"📍 {user['city']}"
+        )
+        if user["description"]:
+            caption += f"\n\n📝 {user['description']}"
+        caption += f"\n\n💌 Сообщение для тебя: {text}"
+        caption += "\n\nХочешь поставить лайк в ответ?"
+        try:
+            if user["photo_file_id"]:
+                await bot.send_photo(
+                    profile_id,
+                    user["photo_file_id"],
+                    caption=limit_caption(caption),
+                    reply_markup=create_like_back_keyboard(user["telegram_id"]),
+                )
+            else:
+                await bot.send_message(
+                    profile_id,
+                    caption,
+                    reply_markup=create_like_back_keyboard(user["telegram_id"]),
+                )
+        except TelegramAPIError:
+            logging.exception("Failed to notify user about like with message")
 
 @dp.callback_query(
     lambda callback: callback.data.startswith("like_back_")

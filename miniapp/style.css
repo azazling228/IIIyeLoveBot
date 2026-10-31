@@ -15,15 +15,16 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --ink: #292326;
-  --muted: #8b7e82;
-  --paper: #fffaf8;
-  --surface: #ffffff;
-  --line: #f1e8e7;
-  --rose: #f45178;
-  --rose-dark: #dc315f;
-  --peach: #fff0e9;
-  --shadow: 0 18px 55px rgba(87, 42, 54, .12);
+  --ink: #30202d;
+  --muted: #87677f;
+  --paper: #fff7fc;
+  --surface: #fffaff;
+  --line: #f3c9e6;
+  --rose: #f234a9;
+  --rose-dark: #bd187d;
+  --peach: #ffe8f6;
+  --green: #10aa87;
+  --shadow: 0 0 25px rgba(242, 52, 169, .16), 0 18px 55px rgba(124, 36, 100, .12);
 }
 
 * { box-sizing: border-box; }
@@ -239,6 +240,20 @@ button { color: inherit; }
   height: 72px;
   font-size: 34px;
   text-shadow: 0 0 12px rgba(255, 79, 200, .85);
+}
+.round-action.message-like {
+  color: var(--rose-dark);
+  font-size: 25px;
+}
+.like-message-sheet { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+.like-message-input { width: 100%; min-height: 120px; resize: vertical; }
+.like-message-preview {
+  margin: -7px 4px 0;
+  padding: 0 12px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 .round-action:active { transform: scale(.94); }
 .round-action:disabled { opacity: .55; cursor: wait; }
@@ -699,16 +714,18 @@ button { color: inherit; }
 
 :root[data-theme="light"] body {
   background:
-    radial-gradient(ellipse at 15% 0%, rgba(244, 81, 120, .09), transparent 42%),
-    #f5eeee;
+    radial-gradient(ellipse at 8% 0%, rgba(242, 52, 169, .24), transparent 38%),
+    radial-gradient(ellipse at 95% 34%, rgba(109, 80, 255, .16), transparent 36%),
+    #fff7fc;
 }
 :root[data-theme="light"] .app-shell {
-  background: rgba(255, 250, 248, .88);
+  background: rgba(255, 250, 255, .82);
+  box-shadow: 0 0 70px rgba(242, 52, 169, .13);
 }
 :root[data-theme="light"] .search-settings-sheet {
   border-color: var(--line);
-  background: linear-gradient(155deg, #fff, #fff8f7 72%);
-  box-shadow: 0 -10px 50px rgba(56, 29, 40, .18);
+  background: linear-gradient(155deg, #fffaff, #fff0fa 72%);
+  box-shadow: 0 -10px 50px rgba(151, 34, 119, .2), 0 0 28px rgba(242, 52, 169, .14);
 }
 :root[data-theme="light"] .gender-option {
   border-color: #ded5d7;
@@ -737,6 +754,24 @@ button { color: inherit; }
 :root[data-theme="light"] .toggle-track { background: #f8eeee; }
 :root[data-theme="light"] .preference-toggle input:checked + .toggle-track {
   background: #ffe1e9;
+}
+:root[data-theme="light"] .round-action {
+  border-color: rgba(242, 52, 169, .22);
+  background: #fffaff;
+  box-shadow: 0 0 20px rgba(242, 52, 169, .2), 0 8px 22px rgba(110, 45, 99, .1);
+}
+:root[data-theme="light"] .round-action.message-like {
+  color: var(--rose-dark);
+  box-shadow: 0 0 22px rgba(242, 52, 169, .28), 0 8px 22px rgba(110, 45, 99, .1);
+}
+:root[data-theme="light"] .round-action.like {
+  color: #f234a9;
+  box-shadow: 0 0 28px rgba(242, 52, 169, .42), 0 8px 24px rgba(110, 45, 99, .12);
+}
+:root[data-theme="light"] .attach-button {
+  border-color: var(--line);
+  background: #fffaff;
+  box-shadow: 0 0 12px rgba(242, 52, 169, .12);
 }
 :root[data-theme="light"] .bottom-nav {
   border-color: rgba(241, 232, 231, .9);

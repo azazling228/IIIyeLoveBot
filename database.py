@@ -100,9 +100,18 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 from_user INTEGER NOT NULL,
                 to_user INTEGER NOT NULL,
+                message TEXT NOT NULL DEFAULT '',
                 UNIQUE(from_user, to_user)
             )
         """)
+        like_columns = connection.execute(
+            "PRAGMA table_info(likes)"
+        ).fetchall()
+        if "message" not in {column["name"] for column in like_columns}:
+            connection.execute("""
+                ALTER TABLE likes
+                ADD COLUMN message TEXT NOT NULL DEFAULT ''
+            """)
         if migrate_total_likes:
             connection.execute("""
                 UPDATE users
@@ -721,7 +730,8 @@ def reset_views(viewer_id):
 
 def add_like(
     from_user,
-    to_user
+    to_user,
+    message="",
 ):
     if from_user == to_user:
         return
@@ -731,13 +741,15 @@ def add_like(
             """
             INSERT OR IGNORE INTO likes (
                 from_user,
-                to_user
+                to_user,
+                message
             )
-            VALUES (?, ?)
+            VALUES (?, ?, ?)
             """,
             (
                 from_user,
                 to_user,
+                message,
             )
         )
         if cursor.rowcount > 0:
@@ -770,7 +782,7 @@ def get_incoming_likes(telegram_id):
     try:
         return connection.execute(
             """
-            SELECT users.*
+            SELECT users.*, likes.message AS like_message
             FROM likes
             JOIN users ON users.telegram_id = likes.from_user
             WHERE likes.to_user = ?

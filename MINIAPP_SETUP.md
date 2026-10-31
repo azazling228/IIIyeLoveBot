@@ -46,3 +46,6 @@ attachments up to 20 MB are stored with the shared message history; Telegram
 media sent directly in the bot is referenced by its Telegram file ID. Incoming
 chat notifications use the sender's profile name rather than their Telegram
 account display name.
+Users can optionally attach one text message (up to 500 characters) to a like
+from the discovery screen. The recipient sees it in the like notification and
+can respond with a mutual like or a separate message.

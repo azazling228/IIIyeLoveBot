@@ -358,6 +358,7 @@
         </article>
         <div class="discover-actions">
           <button class="round-action" id="skip-profile" aria-label="Пропустить">✕</button>
+          <button class="round-action message-like" id="message-like-profile" aria-label="Лайкнуть с сообщением">✉</button>
           <button class="round-action like" id="like-profile" aria-label="Нравится">♥</button>
         </div>
       </section>`;
@@ -367,9 +368,59 @@
     }
     document.getElementById("skip-profile").addEventListener("click", () => runAction(() => decide("skip")));
     document.getElementById("like-profile").addEventListener("click", () => runAction(() => decide("like")));
+    document.getElementById("message-like-profile").addEventListener(
+      "click",
+      () => openLikeMessageComposer(),
+    );
   }
 
-  async function decide(action) {
+  function openLikeMessageComposer() {
+    const layer = document.createElement("div");
+    layer.className = "settings-backdrop";
+    layer.innerHTML = `
+      <section class="search-settings-sheet like-message-sheet" role="dialog"
+        aria-modal="true" aria-labelledby="like-message-title">
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-heading">
+          <h2 id="like-message-title">Лайк с сообщением</h2>
+          <button class="icon-button close-settings" type="button"
+            aria-label="Закрыть">×</button>
+        </div>
+        <p class="settings-description">
+          Одно короткое сообщение появится у человека вместе с уведомлением о лайке.
+        </p>
+        <form class="preferences-form" id="like-message-form">
+          <textarea class="chat-input like-message-input" maxlength="500"
+            required placeholder="Например: привет, го знакомиться"></textarea>
+          <p class="field-hint">До 500 символов.</p>
+          <button class="primary-button search-save-button" type="submit">
+            Отправить лайк
+          </button>
+        </form>
+      </section>`;
+    document.body.appendChild(layer);
+    const close = () => layer.remove();
+    layer.querySelector(".close-settings").addEventListener("click", close);
+    layer.addEventListener("click", (event) => {
+      if (event.target === layer) close();
+    });
+    layer.querySelector("#like-message-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = layer.querySelector(".like-message-input");
+      const button = event.currentTarget.querySelector("button");
+      button.disabled = true;
+      try {
+        await decide("like", input.value.trim());
+        close();
+      } catch (error) {
+        button.disabled = false;
+        showToast(error.message);
+      }
+    });
+    layer.querySelector(".like-message-input").focus();
+  }
+
+  async function decide(action, message = "") {
     if (!state.profile) return;
     const viewed = state.profile;
     const controls = main.querySelectorAll(".round-action");
@@ -378,7 +429,7 @@
     try {
       result = await api("/api/discover/decision", {
         method: "POST",
-        body: JSON.stringify({ profile_id: viewed.id, action }),
+        body: JSON.stringify({ profile_id: viewed.id, action, message }),
       });
     } catch (error) {
       controls.forEach((button) => { button.disabled = false; });
@@ -412,6 +463,7 @@
         </span>
         <span class="unread">♥</span>
       </article>
+      ${profile.like_message ? `<p class="like-message-preview">💌 ${escapeHtml(profile.like_message)}</p>` : ""}
       <div class="discover-actions compact-actions" data-actions="${profile.id}">
         <button class="secondary-button" data-skip-like="${profile.id}">Пропустить</button>
         <button class="primary-button" data-like-back="${profile.id}">Ответить ❤️</button>

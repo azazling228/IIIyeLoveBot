@@ -407,10 +407,14 @@ def create_miniapp_app(bot, bot_token):
             payload = await request.json()
             profile_id = int(payload["profile_id"])
             action = payload["action"]
+            like_message = payload.get("message", "")
         except (ValueError, KeyError, TypeError, json.JSONDecodeError):
             return _json_error("A valid profile_id and action are required.", 400)
         if action not in {"like", "skip"}:
             return _json_error("Action must be like or skip.", 400)
+        if not isinstance(like_message, str) or len(like_message.strip()) > 500:
+            return _json_error("A like message can contain up to 500 characters.", 400)
+        like_message = like_message.strip()
         if profile_id == user_id or not has_viewed(user_id, profile_id):
             return _json_error("This profile is not available.", 404)
         profile = get_user(profile_id)
@@ -421,7 +425,7 @@ def create_miniapp_app(bot, bot_token):
             add_skip(user_id, profile_id)
             return web.json_response({"matched": False})
 
-        add_like(user_id, profile_id)
+        add_like(user_id, profile_id, like_message)
         matched = False
         if has_like(profile_id, user_id):
             new_match = create_match(user_id, profile_id)
@@ -444,7 +448,15 @@ def create_miniapp_app(bot, bot_token):
         if not get_user(user_id):
             return _json_error("Create a profile in the bot first.", 404)
         return web.json_response(
-            {"profiles": [_profile_payload(profile) for profile in get_incoming_likes(user_id)]}
+            {
+                "profiles": [
+                    {
+                        **_profile_payload(profile),
+                        "like_message": profile["like_message"] or "",
+                    }
+                    for profile in get_incoming_likes(user_id)
+                ]
+            }
         )
 
     async def respond_to_like(request):
@@ -780,6 +792,17 @@ def create_miniapp_app(bot, bot_token):
         )
         if sender["description"]:
             text += f"\n\n📝 {sender['description']}"
+        incoming_like = next(
+            (
+                profile["like_message"]
+                for profile in get_incoming_likes(recipient_id)
+                if profile["telegram_id"] == sender_id
+            ),
+            "",
+        )
+        if incoming_like:
+            text += f"\n\n💌 Сообщение для тебя: {incoming_like}"
+        text += "\n\nХочешь поставить лайк в ответ?"
         try:
             await bot.send_message(
                 recipient_id,
