@@ -225,25 +225,40 @@ button { color: inherit; }
 }
 .discover-actions { display: flex; justify-content: center; gap: 25px; padding: 19px 0 8px; }
 .round-action {
+  display: grid;
+  flex: 0 0 62px;
   width: 62px;
   height: 62px;
+  padding: 0;
+  place-items: center;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: 0 0 18px rgba(255, 79, 200, .2);
   font-size: 27px;
+  line-height: 1;
   cursor: pointer;
 }
 .round-action.like {
   color: var(--rose);
-  width: 72px;
-  height: 72px;
-  font-size: 34px;
+  font-size: 29px;
   text-shadow: 0 0 12px rgba(255, 79, 200, .85);
 }
 .round-action.message-like {
   color: var(--rose-dark);
-  font-size: 25px;
+}
+.round-action.message-like svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.round-action.message-like svg path + path {
+  fill: currentColor;
+  stroke: none;
 }
 .like-message-sheet { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
 .like-message-input { width: 100%; min-height: 120px; resize: vertical; }

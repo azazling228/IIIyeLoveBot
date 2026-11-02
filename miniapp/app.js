@@ -381,7 +381,12 @@
         </article>
         <div class="discover-actions">
           <button class="round-action" id="skip-profile" aria-label="Пропустить">✕</button>
-          <button class="round-action message-like" id="message-like-profile" aria-label="Лайкнуть с сообщением">✉</button>
+          <button class="round-action message-like" id="message-like-profile" aria-label="Лайкнуть с сообщением">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H7l-3.5 2v-5A7.5 7.5 0 1 1 20 11.5Z"></path>
+              <path d="M12 15.6s-3-1.8-3-3.6a1.7 1.7 0 0 1 3-1.1 1.7 1.7 0 0 1 3 1.1c0 1.8-3 3.6-3 3.6Z"></path>
+            </svg>
+          </button>
           <button class="round-action like" id="like-profile" aria-label="Нравится">♥</button>
         </div>
       </section>`;
