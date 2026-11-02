@@ -110,7 +110,17 @@ def validate_init_data(init_data, bot_token, now=None):
     return telegram_user
 
 
-def _profile_payload(profile):
+def _quiz_title_for_user(user_id, rating, admin_id, show_title=None):
+    if show_title is None:
+        show_title = rating["show_title"] if rating else True
+    if not show_title:
+        return None
+    if user_id == admin_id:
+        return "Лега"
+    return quiz_title(rating["percent"])["name"] if rating else None
+
+
+def _profile_payload(profile, admin_id=None):
     rating = get_quiz_rating(profile["telegram_id"])
     return {
         "id": profile["telegram_id"],
@@ -121,15 +131,16 @@ def _profile_payload(profile):
         "description": profile["description"] or "",
         "has_photo": bool(profile["photo_file_id"]),
         "quiz_percent": rating["percent"] if rating else None,
-        "quiz_title": (
-            quiz_title(rating["percent"])["name"]
-            if rating and rating["show_title"]
-            else None
+        "quiz_title": _quiz_title_for_user(
+            profile["telegram_id"],
+            rating,
+            admin_id,
+            bool(profile["quiz_show_title"]),
         ),
     }
 
 
-def _chat_payload(chat):
+def _chat_payload(chat, admin_id=None):
     rating = get_quiz_rating(chat["other_user_id"])
     return {
         "id": chat["other_user_id"],
@@ -142,10 +153,11 @@ def _chat_payload(chat):
         "last_message_at": chat["last_message_at"] or chat["created_at"],
         "unread_count": chat["unread_count"],
         "quiz_percent": rating["percent"] if rating else None,
-        "quiz_title": (
-            quiz_title(rating["percent"])["name"]
-            if rating and rating["show_title"]
-            else None
+        "quiz_title": _quiz_title_for_user(
+            chat["other_user_id"],
+            rating,
+            admin_id,
+            bool(chat["quiz_show_title"]),
         ),
     }
 
@@ -154,7 +166,7 @@ def _json_error(message, status):
     return web.json_response({"error": message}, status=status)
 
 
-def create_miniapp_app(bot, bot_token):
+def create_miniapp_app(bot, bot_token, admin_id=None):
     @web.middleware
     async def telegram_auth_middleware(request, handler):
         if request.path in {
@@ -213,12 +225,13 @@ def create_miniapp_app(bot, bot_token):
         quiz_status = quiz_account_status(
             user["telegram_id"],
             _current_quiz_month(),
+            is_admin=user["telegram_id"] == admin_id,
         )
         best_result = get_quiz_best_result(user["telegram_id"])
         rating = get_quiz_rating(user["telegram_id"])
         return web.json_response(
             {
-                **_profile_payload(user),
+                **_profile_payload(user, admin_id),
                 "search_gender": user["search_gender"],
                 "search_age_min": user["search_age_min"],
                 "search_age_max": user["search_age_max"],
@@ -232,11 +245,13 @@ def create_miniapp_app(bot, bot_token):
                 "quiz_attempts_remaining": quiz_status["attempts_remaining"],
                 "quiz_show_title": quiz_status["show_title"],
                 "quiz_percent": rating["percent"] if rating else None,
-                "quiz_title": (
-                    quiz_title(rating["percent"])["name"]
-                    if rating and rating["show_title"]
-                    else None
+                "quiz_title": _quiz_title_for_user(
+                    user["telegram_id"],
+                    rating,
+                    admin_id,
+                    quiz_status["show_title"],
                 ),
+                "quiz_unlimited_attempts": quiz_status["unlimited_attempts"],
                 "quiz_best_score": best_result["score"] if best_result else None,
                 "quiz_total_questions": (
                     best_result["total_questions"] if best_result else None
@@ -249,7 +264,11 @@ def create_miniapp_app(bot, bot_token):
         user = get_user(user_id)
         if not user:
             return _json_error("Create a profile in the bot first.", 404)
-        account = quiz_account_status(user_id, _current_quiz_month())
+        account = quiz_account_status(
+            user_id,
+            _current_quiz_month(),
+            is_admin=user_id == admin_id,
+        )
         best = get_quiz_best_result(user_id)
         rating = get_quiz_rating(user_id)
         return web.json_response(
@@ -258,10 +277,11 @@ def create_miniapp_app(bot, bot_token):
                 "best_score": best["score"] if best else None,
                 "total_questions": best["total_questions"] if best else None,
                 "percent": rating["percent"] if rating else None,
-                "title": (
-                    quiz_title(rating["percent"])["name"]
-                    if rating and rating["show_title"]
-                    else None
+                "title": _quiz_title_for_user(
+                    user_id,
+                    rating,
+                    admin_id,
+                    account["show_title"],
                 ),
                 "has_result": best is not None,
                 "question_count": MAX_QUIZ_QUESTIONS,
@@ -294,6 +314,7 @@ def create_miniapp_app(bot, bot_token):
             session_id,
             json.dumps(questions, ensure_ascii=False),
             _current_quiz_month(),
+            is_admin=user_id == admin_id,
         )
         if attempts_remaining is None:
             return _json_error("Profile not found.", 404)
@@ -306,6 +327,7 @@ def create_miniapp_app(bot, bot_token):
             {
                 "session_id": session_id,
                 "attempts_remaining": attempts_remaining["attempts_remaining"],
+                "unlimited_attempts": attempts_remaining["unlimited_attempts"],
                 "questions": [
                     {
                         "id": question["id"],
@@ -382,8 +404,16 @@ def create_miniapp_app(bot, bot_token):
                 "percent": round(100 * score / len(questions)),
                 "best_score": best["score"],
                 "best_percent": best_percent,
-                "title": quiz_title(round(100 * score / len(questions)))["name"],
-                "best_title": quiz_title(best_percent)["name"],
+                "title": _quiz_title_for_user(
+                    user_id,
+                    {"percent": round(100 * score / len(questions))},
+                    admin_id,
+                ),
+                "best_title": _quiz_title_for_user(
+                    user_id,
+                    {"percent": best_percent},
+                    admin_id,
+                ),
             }
         )
 
@@ -393,6 +423,7 @@ def create_miniapp_app(bot, bot_token):
             return _json_error("Gender must be all, male or female.", 400)
         entries = get_quiz_leaderboard(
             None if gender == "all" else gender,
+            excluded_user_id=admin_id,
         )
         return web.json_response(
             {
@@ -471,7 +502,7 @@ def create_miniapp_app(bot, bot_token):
             description.strip(),
         ):
             return _json_error("Profile not found.", 404)
-        return web.json_response(_profile_payload(get_user(user_id)))
+        return web.json_response(_profile_payload(get_user(user_id), admin_id))
 
     async def update_search(request):
         user_id = request["telegram_id"]
@@ -617,7 +648,7 @@ def create_miniapp_app(bot, bot_token):
         if not profile:
             return web.json_response({"profile": None})
         add_view(user["telegram_id"], profile["telegram_id"])
-        return web.json_response({"profile": _profile_payload(profile)})
+        return web.json_response({"profile": _profile_payload(profile, admin_id)})
 
     async def profile_photo(request):
         try:
@@ -702,7 +733,7 @@ def create_miniapp_app(bot, bot_token):
             {
                 "profiles": [
                     {
-                        **_profile_payload(profile),
+                        **_profile_payload(profile, admin_id),
                         "like_message": profile["like_message"] or "",
                     }
                     for profile in get_incoming_likes(user_id)
@@ -751,7 +782,7 @@ def create_miniapp_app(bot, bot_token):
         return web.json_response(
             {
                 "chats": [
-                    _chat_payload(chat)
+                    _chat_payload(chat, admin_id)
                     for chat in get_matches(user_id, include_last_message=True)
                 ]
             }
@@ -765,7 +796,7 @@ def create_miniapp_app(bot, bot_token):
             {
                 "matches": [
                     {
-                        **_chat_payload(match),
+                        **_chat_payload(match, admin_id),
                         "matched_at": match["created_at"],
                     }
                     for match in get_matches(
@@ -813,7 +844,7 @@ def create_miniapp_app(bot, bot_token):
         mark_messages_read(match["id"], user_id)
         return web.json_response(
             {
-                "partner": _profile_payload(get_user(partner_id)),
+                "partner": _profile_payload(get_user(partner_id), admin_id),
                 "messages": [
                     {
                         "id": item["id"],
@@ -1114,8 +1145,8 @@ def create_miniapp_app(bot, bot_token):
     return app
 
 
-async def start_miniapp_server(bot, bot_token):
-    app = create_miniapp_app(bot, bot_token)
+async def start_miniapp_server(bot, bot_token, admin_id=None):
+    app = create_miniapp_app(bot, bot_token, admin_id)
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.getenv("PORT", "8080"))

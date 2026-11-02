@@ -47,6 +47,7 @@
       "Почётный зритель": "title-viewer",
       "Позёр": "title-poser",
       "Позер": "title-poser",
+      "Лега": "title-lega",
     })[title] || "";
   }
 
@@ -842,6 +843,7 @@
 
   function renderQuizDashboard() {
     const quiz = state.quiz;
+    const hasAttempts = quiz.unlimited_attempts || quiz.attempts_remaining > 0;
     const scoreText = quiz.has_result
       ? `${quiz.best_score}/${quiz.total_questions} · ${quiz.percent}%`
       : "Ещё не проходил";
@@ -854,11 +856,11 @@
           <span>Лучший результат</span>
         </div>
         <div class="quiz-stat">
-          <strong>${quiz.attempts_remaining}</strong>
+          <strong>${quiz.unlimited_attempts ? "∞" : quiz.attempts_remaining}</strong>
           <span>Попыток осталось</span>
         </div>
         ${quiz.title ? `<div class="quiz-title-line ${quizTitleClass(quiz.title)}">${escapeHtml(quiz.title)}</div>` : ""}
-        ${quiz.has_result
+        ${quiz.has_result || quiz.unlimited_attempts
           ? `<label class="quiz-title-toggle">
               <span>Показывать звание рядом с именем</span>
               <input id="quiz-title-visibility" type="checkbox" ${quiz.show_title ? "checked" : ""}>
@@ -866,10 +868,10 @@
             </label>`
           : ""}
         <button class="primary-button quiz-start-button" id="quiz-start"
-          ${quiz.attempts_remaining <= 0 ? "disabled" : ""}>
-          ${quiz.attempts_remaining > 0 ? "Начать тест" : "Попыток пока нет"}
+              ${hasAttempts ? "" : "disabled"}>
+              ${hasAttempts ? "Начать тест" : "Попыток пока нет"}
         </button>
-        ${quiz.attempts_remaining <= 0
+        ${!hasAttempts
           ? `<p class="field-hint">Новая попытка появится первого числа месяца.</p>`
           : ""}
       </section>
@@ -881,6 +883,7 @@
           <li><span class="title-expert">Знаток</span><strong>65–79%</strong></li>
           <li><span class="title-viewer">Почётный зритель</span><strong>50–64%</strong></li>
           <li><span class="title-poser">Позёр</span><strong>меньше 50%</strong></li>
+          <li><span class="title-lega">Лега</span><strong>Администратор</strong></li>
         </ul>
       </section>
       <section class="quiz-leaderboard">
@@ -960,7 +963,9 @@
 
   function renderQuizQuestions(session) {
     main.innerHTML = `
-      <p class="eyebrow">Попыток после старта: ${session.attempts_remaining}</p>
+      <p class="eyebrow">${session.unlimited_attempts
+        ? "Безлимитные попытки"
+        : `Попыток после старта: ${session.attempts_remaining}`}</p>
       <h1 class="page-heading">Тест</h1>
       <p class="settings-description">
         ${session.questions.length} вопросов. Вопросы и варианты ответов перемешаны.

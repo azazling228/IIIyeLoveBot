@@ -561,6 +561,7 @@ button { color: inherit; }
 .title-expert { color: #6de8ff !important; text-shadow: 0 0 10px rgba(80, 212, 255, .35); }
 .title-viewer { color: #b7a0ff !important; text-shadow: 0 0 10px rgba(160, 126, 255, .32); }
 .title-poser { color: #b9a7b5 !important; }
+.title-lega { color: #ff765e !important; text-shadow: 0 0 10px rgba(255, 91, 62, .35); }
 .quiz-summary-card,
 .quiz-rules-card,
 .quiz-leaderboard,
@@ -972,6 +973,7 @@ button { color: inherit; }
 :root[data-theme="light"] .title-expert { color: #007f9a !important; }
 :root[data-theme="light"] .title-viewer { color: #6443b9 !important; }
 :root[data-theme="light"] .title-poser { color: #746674 !important; }
+:root[data-theme="light"] .title-lega { color: #e24628 !important; }
 :root[data-theme="light"] .profile-setting-row { border-color: var(--line); }
 :root[data-theme="light"] .setting-icon {
   border-color: rgba(220, 49, 95, .14);

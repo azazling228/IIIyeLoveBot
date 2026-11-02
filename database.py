@@ -951,7 +951,8 @@ def get_matches(
                 users.gender,
                 users.city,
                 users.photo_file_id,
-                users.description
+                users.description,
+                users.quiz_show_title
             FROM matches
             JOIN users
                 ON users.telegram_id =
@@ -1455,7 +1456,7 @@ def delete_user(
         connection.close()
 
 
-def quiz_account_status(telegram_id, month_key):
+def quiz_account_status(telegram_id, month_key, is_admin=False):
     connection = get_connection()
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -1471,6 +1472,13 @@ def quiz_account_status(telegram_id, month_key):
         if not user:
             connection.rollback()
             return None
+        if is_admin:
+            connection.commit()
+            return {
+                "attempts_remaining": None,
+                "unlimited_attempts": True,
+                "show_title": bool(user["quiz_show_title"]),
+            }
         attempts = user["quiz_attempts_remaining"]
         if user["quiz_last_refill_month"] != month_key:
             if attempts == 0:
@@ -1487,6 +1495,7 @@ def quiz_account_status(telegram_id, month_key):
         connection.commit()
         return {
             "attempts_remaining": attempts,
+            "unlimited_attempts": False,
             "show_title": bool(user["quiz_show_title"]),
         }
     except Exception:
@@ -1496,7 +1505,13 @@ def quiz_account_status(telegram_id, month_key):
         connection.close()
 
 
-def start_quiz_session(telegram_id, session_id, questions_json, month_key):
+def start_quiz_session(
+    telegram_id,
+    session_id,
+    questions_json,
+    month_key,
+    is_admin=False,
+):
     connection = get_connection()
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -1511,6 +1526,20 @@ def start_quiz_session(telegram_id, session_id, questions_json, month_key):
         if not user:
             connection.rollback()
             return None
+        if is_admin:
+            connection.execute(
+                """
+                INSERT INTO quiz_sessions (session_id, user_id, questions_json)
+                VALUES (?, ?, ?)
+                """,
+                (session_id, telegram_id, questions_json),
+            )
+            connection.commit()
+            return {
+                "started": True,
+                "attempts_remaining": None,
+                "unlimited_attempts": True,
+            }
         attempts = user["quiz_attempts_remaining"]
         if user["quiz_last_refill_month"] != month_key:
             if attempts == 0:
@@ -1525,7 +1554,11 @@ def start_quiz_session(telegram_id, session_id, questions_json, month_key):
                 (month_key, telegram_id),
             )
             connection.commit()
-            return {"started": False, "attempts_remaining": 0}
+            return {
+                "started": False,
+                "attempts_remaining": 0,
+                "unlimited_attempts": False,
+            }
         attempts -= 1
         connection.execute(
             """
@@ -1544,7 +1577,11 @@ def start_quiz_session(telegram_id, session_id, questions_json, month_key):
             (session_id, telegram_id, questions_json),
         )
         connection.commit()
-        return {"started": True, "attempts_remaining": attempts}
+        return {
+            "started": True,
+            "attempts_remaining": attempts,
+            "unlimited_attempts": False,
+        }
     except Exception:
         connection.rollback()
         raise
@@ -1639,7 +1676,7 @@ def get_quiz_rating(telegram_id):
         connection.close()
 
 
-def get_quiz_leaderboard(gender=None):
+def get_quiz_leaderboard(gender=None, excluded_user_id=None):
     connection = get_connection()
     try:
         query = """
@@ -1663,10 +1700,16 @@ def get_quiz_leaderboard(gender=None):
             FROM best_results
             JOIN users ON users.telegram_id = best_results.user_id
         """
-        parameters = ()
+        conditions = []
+        parameters = []
         if gender in {"male", "female"}:
-            query += " WHERE users.gender = ?"
-            parameters = (gender,)
+            conditions.append("users.gender = ?")
+            parameters.append(gender)
+        if excluded_user_id is not None:
+            conditions.append("users.telegram_id != ?")
+            parameters.append(excluded_user_id)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY best_results.percent DESC, best_results.score DESC, users.name COLLATE NOCASE"
         return connection.execute(query, parameters).fetchall()
     finally:

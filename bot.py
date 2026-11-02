@@ -2246,7 +2246,7 @@ async def main():
     init_database()
     from miniapp import start_miniapp_server
 
-    web_runner = await start_miniapp_server(bot, BOT_TOKEN)
+    web_runner = await start_miniapp_server(bot, BOT_TOKEN, BOT_ADMIN_ID)
     logging.info("Bot and Telegram Mini App are starting")
     try:
         await dp.start_polling(
