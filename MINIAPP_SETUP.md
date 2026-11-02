@@ -49,3 +49,12 @@ account display name.
 Users can optionally attach one text message (up to 500 characters) to a like
 from the discovery screen. The recipient sees it in the like notification and
 can respond with a mutual like or a separate message.
+
+The quiz and leaderboard are available in the Mini App. New and existing
+profiles start with two attempts; from then on, one attempt is granted on the
+first quiz/profile request in a new Moscow calendar month only when the user has
+zero attempts left. The quiz stores the best result, and deleting the result
+does not restore attempts. Quiz question and answer order is shuffled for every
+attempt; answer keys remain server-side. Leaderboard ranks are split into all
+users, men, and women. Quiz results and title visibility use new SQLite tables
+and columns created by the normal database migration.

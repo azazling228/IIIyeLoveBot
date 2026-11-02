@@ -14,6 +14,8 @@
     poll: null,
     me: null,
     pendingFile: null,
+    quiz: null,
+    quizGender: "all",
   };
 
   applyTheme(localStorage.getItem(themeStorageKey) || "dark");
@@ -28,6 +30,24 @@
       '"': "&quot;",
       "'": "&#39;",
     })[character]);
+  }
+
+  function displayName(profile) {
+    const title = profile.quiz_title
+      ? `<small class="user-title-inline ${quizTitleClass(profile.quiz_title)}">${escapeHtml(profile.quiz_title)}</small>`
+      : "";
+    return `${escapeHtml(profile.name)}${title}`;
+  }
+
+  function quizTitleClass(title) {
+    return ({
+      "Магистр ШУЕ": "title-master",
+      "Безумец": "title-mad",
+      "Знаток": "title-expert",
+      "Почётный зритель": "title-viewer",
+      "Позёр": "title-poser",
+      "Позер": "title-poser",
+    })[title] || "";
   }
 
   async function api(path, options = {}) {
@@ -351,9 +371,12 @@
         <article class="profile-card">
           ${profile.has_photo ? `<img class="profile-photo" id="discover-photo" alt="">` : ""}
           <div class="profile-info">
-            <h1 class="profile-title">${escapeHtml(profile.name)}, ${profile.age}</h1>
+            <h1 class="profile-title">${displayName(profile)}, ${profile.age}</h1>
             <p class="profile-meta">⌖ ${escapeHtml(profile.city)}</p>
             ${profile.description ? `<p class="profile-description">${escapeHtml(profile.description)}</p>` : ""}
+            ${profile.quiz_percent !== null && profile.quiz_percent !== undefined
+              ? `<p class="profile-quiz-rating">♛ Рейтинг теста: ${profile.quiz_percent}%</p>`
+              : ""}
           </div>
         </article>
         <div class="discover-actions">
@@ -458,8 +481,11 @@
       <article class="person-row like-row" data-id="${profile.id}">
         ${profile.has_photo ? `<img class="avatar" data-photo-id="${profile.id}" alt="">` : `<div class="avatar"></div>`}
         <span class="person-copy">
-          <span class="person-name">${escapeHtml(profile.name)}, ${profile.age}</span>
+          <span class="person-name">${displayName(profile)}, ${profile.age}</span>
           <span class="person-preview">${escapeHtml(profile.city)}${profile.description ? ` · ${escapeHtml(profile.description)}` : ""}</span>
+          ${profile.quiz_percent !== null && profile.quiz_percent !== undefined
+            ? `<small class="quiz-card-rating">♛ Рейтинг теста: ${profile.quiz_percent}%</small>`
+            : ""}
         </span>
         <span class="unread">♥</span>
       </article>
@@ -506,8 +532,11 @@
           <button class="person-row" data-open-chat="${chat.id}">
             ${chat.has_photo ? `<img class="avatar" data-photo-id="${chat.id}" alt="">` : `<span class="avatar"></span>`}
             <span class="person-copy">
-              <span class="person-name">${escapeHtml(chat.name)}, ${chat.age}</span>
+              <span class="person-name">${displayName(chat)}, ${chat.age}</span>
               <span class="person-preview">${escapeHtml(chat.last_message || chat.city)}</span>
+              ${chat.quiz_percent !== null && chat.quiz_percent !== undefined
+                ? `<small class="quiz-card-rating">♛ ${chat.quiz_percent}%</small>`
+                : ""}
             </span>
             ${chat.unread_count ? `<span class="unread">${chat.unread_count}</span>` : ""}
           </button>`).join("")}
@@ -542,8 +571,11 @@
             <div class="person-row match-person">
               ${match.has_photo ? `<img class="avatar" data-photo-id="${match.id}" alt="">` : `<span class="avatar"></span>`}
               <span class="person-copy">
-                <span class="person-name">${escapeHtml(match.name)}, ${match.age}</span>
+                <span class="person-name">${displayName(match)}, ${match.age}</span>
                 <span class="person-preview">${escapeHtml(match.city)}</span>
+                ${match.quiz_percent !== null && match.quiz_percent !== undefined
+                  ? `<small class="quiz-card-rating">♛ ${match.quiz_percent}%</small>`
+                  : ""}
               </span>
               <span class="match-heart">♥</span>
             </div>
@@ -668,7 +700,7 @@
           <button id="back-chats" class="chat-back" aria-label="Назад">‹</button>
           ${partner.has_photo ? `<img class="avatar" id="chat-photo" alt="">` : `<span class="avatar"></span>`}
           <div class="person-copy">
-            <span class="person-name">${escapeHtml(partner.name)}, ${partner.age}</span>
+            <span class="person-name">${displayName(partner)}, ${partner.age}</span>
             <span class="person-preview">${escapeHtml(partner.city)}</span>
           </div>
         </header>
@@ -795,12 +827,249 @@
     renderProfile(profile);
   }
 
+  async function loadQuiz() {
+    setActiveTab("quiz");
+    state.quizGender = "all";
+    state.quiz = await api("/api/quiz");
+    renderQuizDashboard();
+    await loadQuizLeaderboard(state.quizGender);
+  }
+
+  function renderQuizDashboard() {
+    const quiz = state.quiz;
+    const scoreText = quiz.has_result
+      ? `${quiz.best_score}/${quiz.total_questions} · ${quiz.percent}%`
+      : "Ещё не проходил";
+    main.innerHTML = `
+      <p class="eyebrow">Проверь свою эрудицию</p>
+      <h1 class="page-heading">Тест на знание нижнего интернета</h1>
+      <section class="quiz-summary-card">
+        <div class="quiz-stat">
+          <strong>${scoreText}</strong>
+          <span>Лучший результат</span>
+        </div>
+        <div class="quiz-stat">
+          <strong>${quiz.attempts_remaining}</strong>
+          <span>Попыток осталось</span>
+        </div>
+        ${quiz.title ? `<div class="quiz-title-line ${quizTitleClass(quiz.title)}">${escapeHtml(quiz.title)}</div>` : ""}
+        ${quiz.has_result
+          ? `<label class="quiz-title-toggle">
+              <span>Показывать звание рядом с именем</span>
+              <input id="quiz-title-visibility" type="checkbox" ${quiz.show_title ? "checked" : ""}>
+              <span class="toggle-track" aria-hidden="true"></span>
+            </label>`
+          : ""}
+        <button class="primary-button quiz-start-button" id="quiz-start"
+          ${quiz.attempts_remaining <= 0 ? "disabled" : ""}>
+          ${quiz.attempts_remaining > 0 ? "Начать тест" : "Попыток пока нет"}
+        </button>
+        ${quiz.attempts_remaining <= 0
+          ? `<p class="field-hint">Новая попытка появится первого числа месяца.</p>`
+          : ""}
+      </section>
+      <section class="quiz-rules-card">
+        <h2>Звания за лучший результат</h2>
+        <ul class="quiz-title-list">
+          <li><span class="title-master">Магистр ШУЕ</span><strong>95–100%</strong></li>
+          <li><span class="title-mad">Безумец</span><strong>80–94%</strong></li>
+          <li><span class="title-expert">Знаток</span><strong>65–79%</strong></li>
+          <li><span class="title-viewer">Почётный зритель</span><strong>50–64%</strong></li>
+          <li><span class="title-poser">Позёр</span><strong>меньше 50%</strong></li>
+        </ul>
+      </section>
+      <section class="quiz-leaderboard">
+        <div class="quiz-leaderboard-heading">
+          <div>
+            <p class="eyebrow">Лучшие результаты</p>
+            <h2>Таблица лидеров</h2>
+          </div>
+        </div>
+        <div class="quiz-gender-tabs" role="tablist" aria-label="Категория рейтинга">
+          <button type="button" data-quiz-gender="all" class="selected">Все</button>
+          <button type="button" data-quiz-gender="male">Парни</button>
+          <button type="button" data-quiz-gender="female">Девушки</button>
+        </div>
+        <div id="quiz-leaderboard-list"><div class="loader"></div></div>
+      </section>
+      ${quiz.has_result
+        ? `<button class="secondary-button quiz-delete-result" id="quiz-delete-result">
+            Удалить мой результат из рейтинга
+          </button>`
+        : ""}`;
+    document.getElementById("quiz-start").addEventListener(
+      "click",
+      () => runAction(startQuiz),
+    );
+    main.querySelectorAll("[data-quiz-gender]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.quizGender = button.dataset.quizGender;
+        main.querySelectorAll("[data-quiz-gender]").forEach((tab) => {
+          tab.classList.toggle("selected", tab === button);
+        });
+        runAction(() => loadQuizLeaderboard(state.quizGender));
+      });
+    });
+    document.getElementById("quiz-title-visibility")?.addEventListener(
+      "change",
+      (event) => runAction(() => setQuizTitleVisibility(event.currentTarget.checked)),
+    );
+    document.getElementById("quiz-delete-result")?.addEventListener(
+      "click",
+      () => runAction(deleteQuizResult),
+    );
+  }
+
+  async function loadQuizLeaderboard(gender) {
+    const list = document.getElementById("quiz-leaderboard-list");
+    if (!list) return;
+    const result = await api(`/api/quiz/leaderboard?gender=${gender}`);
+    if (!result.entries.length) {
+      list.innerHTML = `<p class="quiz-empty-ranking">
+        В рейтинге пока пусто. Пройди тест, чтобы попасть в таблицу лидеров.
+      </p>`;
+      return;
+    }
+    list.innerHTML = `
+      <ol class="quiz-ranking-list">
+        ${result.entries.map((entry) => `
+          <li class="quiz-ranking-row ${entry.rank <= 3 ? `place-${entry.rank}` : ""}">
+            <span class="quiz-rank-number">${entry.rank}</span>
+            <span class="quiz-ranking-user">
+              <span class="quiz-ranking-name">
+                ${escapeHtml(entry.name)}
+                ${entry.title ? `<small class="user-title-inline ${quizTitleClass(entry.title)}">${escapeHtml(entry.title)}</small>` : ""}
+              </span>
+              <small>${entry.score}/${entry.total_questions} правильных</small>
+            </span>
+            <strong class="quiz-ranking-score">${entry.percent}%</strong>
+          </li>`).join("")}
+      </ol>`;
+  }
+
+  async function startQuiz() {
+    const result = await api("/api/quiz/start", { method: "POST" });
+    state.quizSession = result;
+    renderQuizQuestions(result);
+  }
+
+  function renderQuizQuestions(session) {
+    main.innerHTML = `
+      <p class="eyebrow">Попыток после старта: ${session.attempts_remaining}</p>
+      <h1 class="page-heading">Тест</h1>
+      <p class="settings-description">
+        ${session.questions.length} вопросов. Вопросы и варианты ответов перемешаны.
+        Отвечай на все вопросы и отправь результат.
+      </p>
+      <form class="quiz-form" id="quiz-form">
+        ${session.questions.map((question, index) => `
+          <fieldset class="quiz-question-card" data-question-id="${escapeHtml(question.id)}">
+            <legend><span>${index + 1}.</span> ${escapeHtml(question.question)}</legend>
+            <div class="quiz-options">
+              ${question.options.map((option) => `
+                <label class="quiz-option">
+                  <input type="radio" name="${escapeHtml(question.id)}"
+                    value="${escapeHtml(option.id)}">
+                  <span>${escapeHtml(option.text)}</span>
+                </label>`).join("")}
+            </div>
+          </fieldset>`).join("")}
+        <button class="primary-button quiz-start-button" type="submit">Завершить тест</button>
+        <button class="secondary-button quiz-cancel-button" id="quiz-cancel"
+          type="button">Выйти (попытка уже использована)</button>
+      </form>`;
+    document.getElementById("quiz-form").addEventListener("submit", submitQuiz);
+    document.getElementById("quiz-cancel").addEventListener(
+      "click",
+      () => runAction(loadQuiz),
+    );
+  }
+
+  async function submitQuiz(event) {
+    event.preventDefault();
+    const session = state.quizSession;
+    const form = event.currentTarget;
+    const answers = {};
+    for (const question of session.questions) {
+      const fieldset = [...form.querySelectorAll(".quiz-question-card")]
+        .find((element) => element.dataset.questionId === question.id);
+      const selected = fieldset?.querySelector("input:checked");
+      if (!selected) {
+        showToast("Ответь на каждый вопрос, чтобы завершить тест.");
+        fieldset?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+        return;
+      }
+      answers[question.id] = selected.value;
+    }
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const result = await api("/api/quiz/submit", {
+        method: "POST",
+        body: JSON.stringify({ session_id: session.session_id, answers }),
+      });
+      state.quizSession = null;
+      state.quiz = await api("/api/quiz");
+      state.quizGender = "all";
+      renderQuizResult(result);
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message);
+    }
+  }
+
+  function renderQuizResult(result) {
+    main.innerHTML = `
+      <section class="quiz-result-card ${quizTitleClass(result.title)}">
+        <div class="quiz-result-crown">♛</div>
+        <p class="eyebrow">Тест завершён</p>
+        <h1>${result.percent}%</h1>
+        <p>${result.score} из ${result.total_questions} правильных ответов</p>
+        <h2>${escapeHtml(result.title)}</h2>
+        <p>Лучший результат: ${result.best_score}/${result.total_questions} · ${result.best_percent}% — ${escapeHtml(result.best_title)}</p>
+        <button class="primary-button" id="quiz-result-leaderboard">Посмотреть рейтинг</button>
+        <button class="secondary-button" id="quiz-result-home">В раздел теста</button>
+      </section>`;
+    document.getElementById("quiz-result-leaderboard").addEventListener(
+      "click",
+      () => runAction(loadQuiz),
+    );
+    document.getElementById("quiz-result-home").addEventListener(
+      "click",
+      () => runAction(loadQuiz),
+    );
+  }
+
+  async function setQuizTitleVisibility(visible) {
+    await api("/api/quiz/title-visibility", {
+      method: "PATCH",
+      body: JSON.stringify({ visible }),
+    });
+    state.me = { ...state.me, quiz_show_title: visible };
+    showToast(visible ? "Звание будет видно рядом с именем" : "Звание скрыто рядом с именем");
+    await loadQuiz();
+  }
+
+  async function deleteQuizResult() {
+    const confirmed = await confirmAction(
+      "Удалить свой лучший результат из таблицы лидеров? Потраченные попытки не восстановятся.",
+    );
+    if (!confirmed) return;
+    await api("/api/quiz/result", { method: "DELETE" });
+    state.me = { ...state.me, quiz_percent: null, quiz_title: null };
+    showToast("Результат удалён. Попытки не изменились.");
+    await loadQuiz();
+  }
+
   function renderProfile(profile) {
     main.innerHTML = `
       <h1 class="page-heading">Твоя анкета</h1>
       <section class="profile-panel">
         ${profile.has_photo ? `<img class="avatar" id="my-photo" alt="">` : `<div class="avatar"></div>`}
-        <h2>${escapeHtml(profile.name)}, ${profile.age}</h2>
+        <h2>${displayName(profile)}, ${profile.age}</h2>
         <p>⌖ ${escapeHtml(profile.city)}</p>
         ${profile.description ? `<p>${escapeHtml(profile.description)}</p>` : ""}
         <button class="primary-button" id="edit-profile">Редактировать анкету</button>
@@ -816,7 +1085,30 @@
           <span class="profile-stat-value">${profile.match_count ?? 0}</span>
           <span class="profile-stat-label">Мэтчи</span>
         </div>
+        ${profile.quiz_percent !== null && profile.quiz_percent !== undefined
+          ? `<div class="profile-stat">
+              <span class="profile-stat-value">${profile.quiz_percent}%</span>
+              <span class="profile-stat-label">Тест</span>
+            </div>`
+          : ""}
       </section>`);
+    main.insertAdjacentHTML("beforeend", `
+      <section class="profile-settings-card quiz-profile-link-card">
+        <button class="profile-setting-row" id="open-profile-quiz" type="button">
+          <span class="setting-icon">♛</span>
+          <span class="setting-copy">
+            <strong>Тест и таблица лидеров</strong>
+            <small>${profile.quiz_percent !== null && profile.quiz_percent !== undefined
+              ? `Твой лучший результат: ${profile.quiz_percent}%`
+              : "Пройди тест, чтобы попасть в рейтинг"}</small>
+          </span>
+          <span class="setting-chevron">›</span>
+        </button>
+      </section>`);
+    document.getElementById("open-profile-quiz").addEventListener(
+      "click",
+      () => runAction(loadQuiz),
+    );
     main.insertAdjacentHTML("beforeend", `
       <section class="profile-settings-card" aria-label="Настройки анкеты">
         <button class="profile-setting-row" data-profile-setting="notifications">
@@ -1112,6 +1404,7 @@
       else if (tab === "likes") await loadLikes();
       else if (tab === "matches") await loadMatches();
       else if (tab === "chats") await loadChats();
+      else if (tab === "quiz") await loadQuiz();
       else await loadProfile();
     } catch (error) {
       showError(error);

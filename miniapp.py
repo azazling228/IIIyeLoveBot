@@ -3,9 +3,12 @@ import hmac
 import json
 import logging
 import os
+import random
 import re
+import secrets
 import time
 from io import BytesIO
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl
 
@@ -26,6 +29,15 @@ from database import (
     get_messages,
     get_next_profile,
     get_user,
+    get_connection,
+    get_quiz_best_result,
+    get_quiz_leaderboard,
+    get_quiz_rating,
+    quiz_account_status,
+    start_quiz_session,
+    finish_quiz_session,
+    delete_quiz_results,
+    update_quiz_title_visibility,
     has_like,
     has_viewed,
     is_blocked,
@@ -41,12 +53,19 @@ from database import (
     update_profile_fields,
     update_message_media_file_id,
 )
+from quiz_data import QUESTIONS, quiz_title
 
 
 MINIAPP_DIR = Path(__file__).resolve().parent / "miniapp"
 MAX_INIT_DATA_AGE = 60 * 60 * 24
 MAX_CHAT_MESSAGE_LENGTH = 3900
 MAX_CHAT_MEDIA_SIZE = 20 * 1024 * 1024
+MAX_QUIZ_QUESTIONS = len(QUESTIONS)
+
+
+def _current_quiz_month():
+    moscow_time = datetime.now(timezone(timedelta(hours=3)))
+    return moscow_time.strftime("%Y-%m")
 
 
 def validate_init_data(init_data, bot_token, now=None):
@@ -92,6 +111,7 @@ def validate_init_data(init_data, bot_token, now=None):
 
 
 def _profile_payload(profile):
+    rating = get_quiz_rating(profile["telegram_id"])
     return {
         "id": profile["telegram_id"],
         "name": profile["name"],
@@ -100,10 +120,17 @@ def _profile_payload(profile):
         "city": profile["city"],
         "description": profile["description"] or "",
         "has_photo": bool(profile["photo_file_id"]),
+        "quiz_percent": rating["percent"] if rating else None,
+        "quiz_title": (
+            quiz_title(rating["percent"])["name"]
+            if rating and rating["show_title"]
+            else None
+        ),
     }
 
 
 def _chat_payload(chat):
+    rating = get_quiz_rating(chat["other_user_id"])
     return {
         "id": chat["other_user_id"],
         "name": chat["name"],
@@ -114,6 +141,12 @@ def _chat_payload(chat):
         "last_message": chat["last_message"] or "",
         "last_message_at": chat["last_message_at"] or chat["created_at"],
         "unread_count": chat["unread_count"],
+        "quiz_percent": rating["percent"] if rating else None,
+        "quiz_title": (
+            quiz_title(rating["percent"])["name"]
+            if rating and rating["show_title"]
+            else None
+        ),
     }
 
 
@@ -171,6 +204,12 @@ def create_miniapp_app(bot, bot_token):
         user = get_user(request["telegram_id"])
         if not user:
             return _json_error("Create a profile in the bot first.", 404)
+        quiz_status = quiz_account_status(
+            user["telegram_id"],
+            _current_quiz_month(),
+        )
+        best_result = get_quiz_best_result(user["telegram_id"])
+        rating = get_quiz_rating(user["telegram_id"])
         return web.json_response(
             {
                 **_profile_payload(user),
@@ -184,8 +223,214 @@ def create_miniapp_app(bot, bot_token):
                 "notify_matches": bool(user["notify_matches"]),
                 "notify_messages": bool(user["notify_messages"]),
                 "banned_words": user["banned_words"] or "",
+                "quiz_attempts_remaining": quiz_status["attempts_remaining"],
+                "quiz_show_title": quiz_status["show_title"],
+                "quiz_percent": rating["percent"] if rating else None,
+                "quiz_title": (
+                    quiz_title(rating["percent"])["name"]
+                    if rating and rating["show_title"]
+                    else None
+                ),
+                "quiz_best_score": best_result["score"] if best_result else None,
+                "quiz_total_questions": (
+                    best_result["total_questions"] if best_result else None
+                ),
             }
         )
+
+    async def quiz_status(request):
+        user_id = request["telegram_id"]
+        user = get_user(user_id)
+        if not user:
+            return _json_error("Create a profile in the bot first.", 404)
+        account = quiz_account_status(user_id, _current_quiz_month())
+        best = get_quiz_best_result(user_id)
+        rating = get_quiz_rating(user_id)
+        return web.json_response(
+            {
+                **account,
+                "best_score": best["score"] if best else None,
+                "total_questions": best["total_questions"] if best else None,
+                "percent": rating["percent"] if rating else None,
+                "title": (
+                    quiz_title(rating["percent"])["name"]
+                    if rating and rating["show_title"]
+                    else None
+                ),
+                "has_result": best is not None,
+                "question_count": MAX_QUIZ_QUESTIONS,
+            }
+        )
+
+    async def quiz_start(request):
+        user_id = request["telegram_id"]
+        if not get_user(user_id):
+            return _json_error("Create a profile in the bot first.", 404)
+        questions = []
+        for source in QUESTIONS:
+            options = [
+                {"id": option_id, "text": text}
+                for option_id, text in source["options"]
+            ]
+            random.shuffle(options)
+            questions.append(
+                {
+                    "id": source["id"],
+                    "question": source["question"],
+                    "options": options,
+                    "correct": source["correct"],
+                }
+            )
+        random.shuffle(questions)
+        session_id = secrets.token_urlsafe(24)
+        attempts_remaining = start_quiz_session(
+            user_id,
+            session_id,
+            json.dumps(questions, ensure_ascii=False),
+            _current_quiz_month(),
+        )
+        if attempts_remaining is None:
+            return _json_error("Profile not found.", 404)
+        if not attempts_remaining["started"]:
+            return web.json_response(
+                {"error": "Попыток пока нет. Новая попытка появится первого числа месяца."},
+                status=409,
+            )
+        return web.json_response(
+            {
+                "session_id": session_id,
+                "attempts_remaining": attempts_remaining["attempts_remaining"],
+                "questions": [
+                    {
+                        "id": question["id"],
+                        "question": question["question"],
+                        "options": question["options"],
+                    }
+                    for question in questions
+                ],
+            }
+        )
+
+    async def quiz_submit(request):
+        user_id = request["telegram_id"]
+        try:
+            payload = await request.json()
+        except (TypeError, json.JSONDecodeError):
+            return _json_error("Valid quiz answers are required.", 400)
+        if not isinstance(payload, dict):
+            return _json_error("Valid quiz answers are required.", 400)
+        session_id = payload.get("session_id")
+        answers = payload.get("answers")
+        if (
+            not isinstance(session_id, str)
+            or not isinstance(answers, dict)
+            or len(session_id) > 100
+            or any(
+                not isinstance(question_id, str)
+                or not isinstance(option_id, str)
+                for question_id, option_id in answers.items()
+            )
+        ):
+            return _json_error("Valid quiz answers are required.", 400)
+        connection = get_connection()
+        try:
+            row = connection.execute(
+                """
+                SELECT questions_json
+                FROM quiz_sessions
+                WHERE session_id = ? AND user_id = ?
+                """,
+                (session_id, user_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if not row:
+            return _json_error("Quiz session expired or already submitted.", 404)
+        questions = json.loads(row["questions_json"])
+        expected_ids = {question["id"] for question in questions}
+        if set(answers) != expected_ids:
+            return _json_error("Answer every question before submitting.", 400)
+        if any(
+            answer not in {option["id"] for option in question["options"]}
+            for question in questions
+            for answer in (answers[question["id"]],)
+        ):
+            return _json_error("One or more answers are invalid.", 400)
+        score = sum(
+            answers[question["id"]] == question["correct"]
+            for question in questions
+        )
+        best = finish_quiz_session(
+            session_id,
+            user_id,
+            score,
+            len(questions),
+        )
+        if not best:
+            return _json_error("Quiz session expired or already submitted.", 404)
+        best_percent = best["percent"]
+        return web.json_response(
+            {
+                "score": score,
+                "total_questions": len(questions),
+                "percent": round(100 * score / len(questions)),
+                "best_score": best["score"],
+                "best_percent": best_percent,
+                "title": quiz_title(round(100 * score / len(questions)))["name"],
+                "best_title": quiz_title(best_percent)["name"],
+            }
+        )
+
+    async def quiz_leaderboard(request):
+        gender = request.query.get("gender", "all")
+        if gender not in {"all", "male", "female"}:
+            return _json_error("Gender must be all, male or female.", 400)
+        entries = get_quiz_leaderboard(
+            None if gender == "all" else gender,
+        )
+        return web.json_response(
+            {
+                "entries": [
+                    {
+                        "rank": rank,
+                        "id": entry["telegram_id"],
+                        "name": entry["name"],
+                        "percent": entry["percent"],
+                        "score": entry["score"],
+                        "total_questions": entry["total_questions"],
+                        "title": (
+                            quiz_title(entry["percent"])["name"]
+                            if entry["quiz_show_title"]
+                            else None
+                        ),
+                        "title_class": (
+                            quiz_title(entry["percent"])["class"]
+                            if entry["quiz_show_title"]
+                            else None
+                        ),
+                    }
+                    for rank, entry in enumerate(entries, start=1)
+                ]
+            }
+        )
+
+    async def quiz_delete_result(request):
+        delete_quiz_results(request["telegram_id"])
+        return web.json_response({"deleted": True})
+
+    async def quiz_title_setting(request):
+        try:
+            payload = await request.json()
+        except (TypeError, json.JSONDecodeError):
+            return _json_error("A valid title visibility setting is required.", 400)
+        if not isinstance(payload, dict) or type(payload.get("visible")) is not bool:
+            return _json_error("visible must be true or false.", 400)
+        if not update_quiz_title_visibility(
+            request["telegram_id"],
+            payload["visible"],
+        ):
+            return _json_error("Profile not found.", 404)
+        return web.json_response({"show_title": payload["visible"]})
 
     async def update_me(request):
         user_id = request["telegram_id"]
@@ -827,6 +1072,12 @@ def create_miniapp_app(bot, bot_token):
     app.router.add_get("/legal", legal)
     app.router.add_get("/healthz", health)
     app.router.add_get("/api/me", me)
+    app.router.add_get("/api/quiz", quiz_status)
+    app.router.add_post("/api/quiz/start", quiz_start)
+    app.router.add_post("/api/quiz/submit", quiz_submit)
+    app.router.add_get("/api/quiz/leaderboard", quiz_leaderboard)
+    app.router.add_delete("/api/quiz/result", quiz_delete_result)
+    app.router.add_patch("/api/quiz/title-visibility", quiz_title_setting)
     app.router.add_patch("/api/me", update_me)
     app.router.add_patch("/api/search-settings", update_search)
     app.router.add_patch(

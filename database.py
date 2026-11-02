@@ -41,7 +41,10 @@ def init_database():
                 notify_likes INTEGER NOT NULL DEFAULT 1,
                 notify_matches INTEGER NOT NULL DEFAULT 1,
                 notify_messages INTEGER NOT NULL DEFAULT 1,
-                banned_words TEXT NOT NULL DEFAULT ''
+                banned_words TEXT NOT NULL DEFAULT '',
+                quiz_attempts_remaining INTEGER NOT NULL DEFAULT 2,
+                quiz_last_refill_month TEXT NOT NULL DEFAULT '',
+                quiz_show_title INTEGER NOT NULL DEFAULT 1
             )
         """)
 
@@ -74,6 +77,9 @@ def init_database():
             ("notify_matches", "INTEGER NOT NULL DEFAULT 1"),
             ("notify_messages", "INTEGER NOT NULL DEFAULT 1"),
             ("banned_words", "TEXT NOT NULL DEFAULT ''"),
+            ("quiz_attempts_remaining", "INTEGER NOT NULL DEFAULT 2"),
+            ("quiz_last_refill_month", "TEXT NOT NULL DEFAULT ''"),
+            ("quiz_show_title", "INTEGER NOT NULL DEFAULT 1"),
         ):
             if column_name not in column_names:
                 connection.execute(
@@ -121,6 +127,28 @@ def init_database():
                     WHERE likes.to_user = users.telegram_id
                 )
             """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                score INTEGER NOT NULL,
+                total_questions INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_quiz_results_user
+            ON quiz_results(user_id, score DESC)
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_sessions (
+                session_id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                questions_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
         # ======================================
         # МЭТЧИ
@@ -1384,6 +1412,15 @@ def delete_user(
                 )
             )
 
+        connection.execute(
+            "DELETE FROM quiz_results WHERE user_id = ?",
+            (telegram_id,),
+        )
+        connection.execute(
+            "DELETE FROM quiz_sessions WHERE user_id = ?",
+            (telegram_id,),
+        )
+
         # --------------------------------------
         # УДАЛЯЕМ МЭТЧИ
         # --------------------------------------
@@ -1412,6 +1449,250 @@ def delete_user(
             )
         )
 
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def quiz_account_status(telegram_id, month_key):
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        user = connection.execute(
+            """
+            SELECT quiz_attempts_remaining, quiz_last_refill_month,
+                   quiz_show_title
+            FROM users
+            WHERE telegram_id = ?
+            """,
+            (telegram_id,),
+        ).fetchone()
+        if not user:
+            connection.rollback()
+            return None
+        attempts = user["quiz_attempts_remaining"]
+        if user["quiz_last_refill_month"] != month_key:
+            if attempts == 0:
+                attempts = 1
+            connection.execute(
+                """
+                UPDATE users
+                SET quiz_attempts_remaining = ?,
+                    quiz_last_refill_month = ?
+                WHERE telegram_id = ?
+                """,
+                (attempts, month_key, telegram_id),
+            )
+        connection.commit()
+        return {
+            "attempts_remaining": attempts,
+            "show_title": bool(user["quiz_show_title"]),
+        }
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def start_quiz_session(telegram_id, session_id, questions_json, month_key):
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        user = connection.execute(
+            """
+            SELECT quiz_attempts_remaining, quiz_last_refill_month
+            FROM users
+            WHERE telegram_id = ?
+            """,
+            (telegram_id,),
+        ).fetchone()
+        if not user:
+            connection.rollback()
+            return None
+        attempts = user["quiz_attempts_remaining"]
+        if user["quiz_last_refill_month"] != month_key:
+            if attempts == 0:
+                attempts = 1
+        if attempts <= 0:
+            connection.execute(
+                """
+                UPDATE users
+                SET quiz_last_refill_month = ?
+                WHERE telegram_id = ?
+                """,
+                (month_key, telegram_id),
+            )
+            connection.commit()
+            return {"started": False, "attempts_remaining": 0}
+        attempts -= 1
+        connection.execute(
+            """
+            UPDATE users
+            SET quiz_attempts_remaining = ?,
+                quiz_last_refill_month = ?
+            WHERE telegram_id = ?
+            """,
+            (attempts, month_key, telegram_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO quiz_sessions (session_id, user_id, questions_json)
+            VALUES (?, ?, ?)
+            """,
+            (session_id, telegram_id, questions_json),
+        )
+        connection.commit()
+        return {"started": True, "attempts_remaining": attempts}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def finish_quiz_session(session_id, telegram_id, score, total_questions):
+    connection = get_connection()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        session = connection.execute(
+            """
+            SELECT session_id
+            FROM quiz_sessions
+            WHERE session_id = ? AND user_id = ?
+            """,
+            (session_id, telegram_id),
+        ).fetchone()
+        if not session:
+            connection.rollback()
+            return None
+        connection.execute(
+            """
+            INSERT INTO quiz_results (user_id, score, total_questions)
+            VALUES (?, ?, ?)
+            """,
+            (telegram_id, score, total_questions),
+        )
+        connection.execute(
+            "DELETE FROM quiz_sessions WHERE session_id = ?",
+            (session_id,),
+        )
+        connection.commit()
+        return get_quiz_best_result(telegram_id)
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def get_quiz_best_result(telegram_id):
+    connection = get_connection()
+    try:
+        return connection.execute(
+            """
+            SELECT
+                score,
+                total_questions,
+                CAST(ROUND(100.0 * score / total_questions) AS INTEGER) AS percent
+            FROM quiz_results
+            WHERE user_id = ?
+            ORDER BY percent DESC, score DESC, created_at ASC
+            LIMIT 1
+            """,
+            (telegram_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+
+
+def get_quiz_rating(telegram_id):
+    connection = get_connection()
+    try:
+        result = connection.execute(
+            """
+            SELECT
+                users.quiz_show_title,
+                (
+                    SELECT CAST(ROUND(100.0 * score / total_questions) AS INTEGER)
+                    FROM quiz_results
+                    WHERE user_id = users.telegram_id
+                    ORDER BY
+                        CAST(ROUND(100.0 * score / total_questions) AS INTEGER) DESC,
+                        score DESC,
+                        created_at ASC
+                    LIMIT 1
+                ) AS percent
+            FROM users
+            WHERE users.telegram_id = ?
+            """,
+            (telegram_id,),
+        ).fetchone()
+        if not result or result["percent"] is None:
+            return None
+        return {
+            "percent": result["percent"],
+            "show_title": bool(result["quiz_show_title"]),
+        }
+    finally:
+        connection.close()
+
+
+def get_quiz_leaderboard(gender=None):
+    connection = get_connection()
+    try:
+        query = """
+            WITH best_results AS (
+                SELECT
+                    user_id,
+                    MAX(CAST(ROUND(100.0 * score / total_questions) AS INTEGER)) AS percent,
+                    MAX(score) AS score,
+                    MAX(total_questions) AS total_questions
+                FROM quiz_results
+                GROUP BY user_id
+            )
+            SELECT
+                users.telegram_id,
+                users.name,
+                users.gender,
+                users.quiz_show_title,
+                best_results.score,
+                best_results.total_questions,
+                best_results.percent
+            FROM best_results
+            JOIN users ON users.telegram_id = best_results.user_id
+        """
+        parameters = ()
+        if gender in {"male", "female"}:
+            query += " WHERE users.gender = ?"
+            parameters = (gender,)
+        query += " ORDER BY best_results.percent DESC, best_results.score DESC, users.name COLLATE NOCASE"
+        return connection.execute(query, parameters).fetchall()
+    finally:
+        connection.close()
+
+
+def delete_quiz_results(telegram_id):
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            "DELETE FROM quiz_results WHERE user_id = ?",
+            (telegram_id,),
+        )
+        connection.commit()
+        return cursor.rowcount
+    finally:
+        connection.close()
+
+
+def update_quiz_title_visibility(telegram_id, visible):
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            "UPDATE users SET quiz_show_title = ? WHERE telegram_id = ?",
+            (int(visible), telegram_id),
+        )
         connection.commit()
         return cursor.rowcount > 0
     finally:
