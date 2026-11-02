@@ -22,19 +22,8 @@ QUESTIONS = [
         "correct": "shepherd",
     },
     {
-        "id": "dog_food",
-        "question": "Чем Валентин Владимирович точно НЕ кормил свою собаку, и она точно НЕ умерла от этого?",
-        "options": [
-            ("glass", "Стекло"),
-            ("spoiled_food", "Испорченная еда"),
-            ("chicken_bones", "Куриные кости"),
-            ("stale_meat", "Тухлый фарш"),
-        ],
-        "correct": "glass",
-    },
-    {
         "id": "bedbug",
-        "question": "Кого называют «клоп»?",
+        "question": "Кого в этой истории называют «клоп»?",
         "options": [
             ("valentin", "Валентин Владимирович"),
             ("konstantin", "Константин Вайтович"),
@@ -45,7 +34,7 @@ QUESTIONS = [
     },
     {
         "id": "goose",
-        "question": "Кого называют «гусь»?",
+        "question": "Кого в этой истории называют «гусь»?",
         "options": [
             ("egor", "Егор Супицкий"),
             ("andrey_yashin", "Андрей Яшин"),
@@ -62,17 +51,6 @@ QUESTIONS = [
             ("lantern", "Червяк"),
             ("whirlwind", "Чвидарас"),
             ("well", "Колодец"),
-        ],
-        "correct": "well",
-    },
-    {
-        "id": "family_story",
-        "question": "В каком месте по вине Владимира Спирина умерла его родная мать?",
-        "options": [
-            ("well", "Колодец"),
-            ("home", "Дом"),
-            ("street", "Улица"),
-            ("barn", "Сарай"),
         ],
         "correct": "well",
     },
@@ -154,17 +132,6 @@ QUESTIONS = [
         "correct": "mukhin",
     },
     {
-        "id": "wrestling_move",
-        "question": "Какой прием идет перед знаменитым приемом «рот кольцом»?",
-        "options": [
-            ("body_entry", "Проход в корпус"),
-            ("shoulder_throw", "Бросок через плечо"),
-            ("arm_dive", "Нырок под руку"),
-            ("belt_hold", "Захват за пояс"),
-        ],
-        "correct": "body_entry",
-    },
-    {
         "id": "chocolate",
         "question": "Какой шоколад является радиоактивным по мнению Анатолия Маркина?",
         "options": [
@@ -177,7 +144,7 @@ QUESTIONS = [
     },
     {
         "id": "club",
-        "question": "Членом какой банды является Константин Вайтович?",
+        "question": "К какому сообществу относится Константин Вайтович?",
         "options": [
             ("rot_koltsom", "«Рот кольцом»"),
             ("bluds", "«Бладсы»"),
@@ -199,7 +166,7 @@ QUESTIONS = [
     },
     {
         "id": "maestro",
-        "question": "Кого называют «маэстро рыба»?",
+        "question": "Кого называют «маэстро-рыба»?",
         "options": [
             ("evgeny", "Евгений Дмитерко"),
             ("andrey_kurenkov", "Андрей Куренков"),
@@ -210,7 +177,7 @@ QUESTIONS = [
     },
     {
         "id": "countryman",
-        "question": "Кого в этой истории называют «селюк»?",
+        "question": "Кого в этой истории называют «земляк»?",
         "options": [
             ("artem", "Артём Новиков"),
             ("anatoly", "Анатолий Маркин"),
@@ -218,17 +185,6 @@ QUESTIONS = [
             ("andrey_yashin", "Андрей Яшин"),
         ],
         "correct": "artem",
-    },
-    {
-        "id": "family_conflict",
-        "question": "Как называется акт избиения Людмилы Яшиной ее сыном? ",
-        "options": [
-            ("aya", "Ая-ая"),
-            ("oyo", "Оё-оё"),
-            ("oye", "Ое-ое"),
-            ("aye", "Ае-ае"),
-        ],
-        "correct": "aya",
     },
     {
         "id": "book_hero",
@@ -253,28 +209,6 @@ QUESTIONS = [
         "correct": "tashla",
     },
     {
-        "id": "estate_animal",
-        "question": "Какое животное убил Владимир Спирин в Усадьбе?",
-        "options": [
-            ("rabbit", "Кролик"),
-            ("goose", "Гусь"),
-            ("kitten", "Котёнок"),
-            ("puppy", "Щенок"),
-        ],
-        "correct": "rabbit",
-    },
-    {
-        "id": "nest_animal",
-        "question": "Какое животное кидал в стену Владимир Спирин в Гнезде?",
-        "options": [
-            ("puppy", "Щенок"),
-            ("kitten", "Котёнок"),
-            ("rabbit", "Кролик"),
-            ("calf", "Телёнок"),
-        ],
-        "correct": "puppy",
-    },
-    {
         "id": "project",
         "question": "Что не является проектом?",
         "options": [
@@ -284,28 +218,6 @@ QUESTIONS = [
             ("pasture", "Пастбище"),
         ],
         "correct": "pasture",
-    },
-    {
-        "id": "island",
-        "question": "На каком острове проходили соревнования под организацией Бекона?",
-        "options": [
-            ("pithecus", "Остров питексов"),
-            ("explorers", "Остров ублюдков"),
-            ("seafarers", "Остров даунов"),
-            ("lighthouse", "Остров терпил"),
-        ],
-        "correct": "pithecus",
-    },
-    {
-        "id": "nickname_departure",
-        "question": "Какое прозвище было у персонажа, который покинул Землянку после конфликта?",
-        "options": [
-            ("krol", "Крол"),
-            ("captain", "Кинг-конг"),
-            ("wanderer", "Чвид"),
-            ("shkiper", "Шкила"),
-        ],
-        "correct": "krol",
     },
 ]
 
