@@ -185,17 +185,23 @@ def create_miniapp_app(bot, bot_token):
         client_max_size=MAX_CHAT_MEDIA_SIZE + 64 * 1024,
     )
 
+    def static_file(path):
+        return web.FileResponse(
+            MINIAPP_DIR / path,
+            headers={"Cache-Control": "no-store"},
+        )
+
     async def index(_request):
-        return web.FileResponse(MINIAPP_DIR / "index.html")
+        return static_file("index.html")
 
     async def script(_request):
-        return web.FileResponse(MINIAPP_DIR / "app.js")
+        return static_file("app.js")
 
     async def styles(_request):
-        return web.FileResponse(MINIAPP_DIR / "style.css")
+        return static_file("style.css")
 
     async def legal(_request):
-        return web.FileResponse(MINIAPP_DIR / "legal.html")
+        return static_file("legal.html")
 
     async def health(_request):
         return web.json_response({"status": "ok"})
