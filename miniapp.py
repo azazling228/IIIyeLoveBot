@@ -112,7 +112,7 @@ def validate_init_data(init_data, bot_token, now=None):
 
 def _quiz_title_for_user(user_id, rating, admin_id, show_title=None):
     if show_title is None:
-        show_title = rating["show_title"] if rating else True
+        show_title = rating.get("show_title", True) if rating else True
     if not show_title:
         return None
     if user_id == admin_id:
