@@ -185,7 +185,7 @@ button { color: inherit; }
 .discover-wrap { padding-top: 8px; }
 .profile-card {
   position: relative;
-  min-height: 180px;
+  min-height: 0;
   padding: 14px;
   gap: 14px;
   overflow: hidden;
@@ -194,15 +194,16 @@ button { color: inherit; }
   background: var(--surface);
   box-shadow: var(--shadow);
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
 }
 .profile-photo {
   position: relative;
-  width: 38%;
-  max-width: 190px;
-  min-width: 110px;
-  aspect-ratio: 1 / 1.2;
-  flex: 0 0 38%;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  flex: 0 0 auto;
   border-radius: 17px;
   object-fit: cover;
   background: linear-gradient(145deg, #54245b, #f451a8);
@@ -212,8 +213,7 @@ button { color: inherit; }
   z-index: 1;
   position: relative;
   min-width: 0;
-  flex: 1;
-  padding: 4px 2px 4px 0;
+  padding: 2px 2px 4px;
   color: var(--ink);
 }
 .profile-title { margin: 0 0 4px; font-size: 21px; line-height: 1.2; letter-spacing: -.5px; overflow-wrap: anywhere; }
