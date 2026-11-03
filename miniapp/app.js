@@ -425,9 +425,11 @@
       ${renderDiscoveryToolbar()}
       <section class="discover-wrap">
         <article class="profile-card">
-          ${profile.has_photo ? `<img class="profile-photo" id="discover-photo" alt="">` : ""}
+          ${profile.has_photo
+            ? `<img class="profile-photo" id="discover-photo" alt="">`
+            : `<div class="profile-photo profile-photo-placeholder" aria-hidden="true"></div>`}
           <div class="profile-info">
-            <h1 class="profile-title">${displayName(profile)}, ${profile.age}</h1>
+            <h1 class="profile-title">${displayName(profile)}<span class="profile-age">, ${profile.age}</span></h1>
             <p class="profile-meta">⌖ ${escapeHtml(profile.city)}</p>
             ${profile.description ? `<p class="profile-description">${escapeHtml(profile.description)}</p>` : ""}
             ${profile.quiz_percent !== null && profile.quiz_percent !== undefined
@@ -1141,9 +1143,13 @@
     main.innerHTML = `
       <h1 class="page-heading">Твоя анкета</h1>
       <section class="profile-panel">
-        ${profile.has_photo ? `<img class="avatar" id="my-photo" alt="">` : `<div class="avatar"></div>`}
-        <h2>${displayName(profile)}, ${profile.age}</h2>
-        <p>⌖ ${escapeHtml(profile.city)}</p>
+        <div class="profile-identity">
+          ${profile.has_photo ? `<img class="avatar" id="my-photo" alt="">` : `<div class="avatar"></div>`}
+          <div class="profile-identity-copy">
+            <h2>${displayName(profile)}<span class="profile-age">, ${profile.age}</span></h2>
+            <p>⌖ ${escapeHtml(profile.city)}</p>
+          </div>
+        </div>
         ${profile.description ? `<p>${escapeHtml(profile.description)}</p>` : ""}
         <button class="primary-button" id="edit-profile">Редактировать анкету</button>
         <p class="profile-hint">Фотографию можно изменить в чате с ботом.</p>
