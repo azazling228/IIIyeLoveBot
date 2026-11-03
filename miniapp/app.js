@@ -34,7 +34,7 @@
 
   function displayName(profile) {
     return `<span class="display-name">
-      ${escapeHtml(profile.name)}${renderQuizTitle(
+      <span class="display-name-text">${escapeHtml(profile.name)}</span>${renderQuizTitle(
         profile.quiz_title,
         profile.quiz_percent,
         profile.gender,
@@ -50,11 +50,21 @@
       : "";
     return `<span class="user-title-inline ${quizTitleClass(title)}"
       role="button" tabindex="0" data-quiz-title data-percent="${percentValue}"
+      data-title="${escapeHtml(title)}"
       data-gender="${escapeHtml(gender || "")}"
       aria-label="Звание: ${escapeHtml(title)}">${escapeHtml(title)}</span>`;
   }
 
   function showQuizTitlePopup(badge) {
+    if (badge.dataset.title === "Лега") {
+      const message = "Почётный админ";
+      if (typeof telegram?.showPopup === "function") {
+        telegram.showPopup({ message, buttons: [{ type: "ok" }] });
+      } else {
+        window.alert(message);
+      }
+      return;
+    }
     const pronoun = badge.dataset.gender === "female" ? "Она" : "Он";
     const percent = badge.dataset.percent;
     const message = percent === ""

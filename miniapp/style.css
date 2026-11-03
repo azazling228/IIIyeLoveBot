@@ -380,6 +380,17 @@ button { color: inherit; }
   cursor: pointer;
 }
 .nav-icon { font-size: 24px; line-height: 1; }
+.nav-icon-svg {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.matches-icon { stroke-width: 1.65; }
 .nav-item.active {
   color: var(--rose);
   font-weight: 800;
@@ -550,17 +561,15 @@ button { color: inherit; }
   font-weight: 750;
 }
 .user-title-inline {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 1;
-  max-width: 100%;
-  margin: 0;
+  position: relative;
+  flex: 0 0 auto;
+  max-width: 42%;
+  margin: -.28em 0 0;
   padding: 1px 3px;
   overflow: hidden;
   border: 0;
   border-radius: 4px;
-  background: var(--paper);
+  background: transparent;
   font: inherit;
   font-size: .56em;
   font-weight: 800;
@@ -574,13 +583,15 @@ button { color: inherit; }
   outline-offset: 2px;
 }
 .display-name {
-  position: relative;
-  display: inline-block;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
   max-width: 100%;
-  padding-top: .48em;
+  min-width: 0;
   overflow-wrap: anywhere;
   vertical-align: baseline;
 }
+.display-name-text { min-width: 0; overflow-wrap: anywhere; }
 .title-master { color: #ffcc45 !important; text-shadow: 0 0 12px rgba(255, 197, 50, .55); }
 .title-mad { color: #ff6ad5 !important; text-shadow: 0 0 10px rgba(255, 79, 200, .35); }
 .title-expert { color: #6de8ff !important; text-shadow: 0 0 10px rgba(80, 212, 255, .35); }
