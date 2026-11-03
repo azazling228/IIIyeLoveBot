@@ -23,7 +23,7 @@ QUESTIONS = [
     },
     {
         "id": "bedbug",
-        "question": "Кого в этой истории называют «клоп»?",
+        "question": "Кого называют «клоп»?",
         "options": [
             ("valentin", "Валентин Владимирович"),
             ("konstantin", "Константин Вайтович"),
@@ -34,7 +34,7 @@ QUESTIONS = [
     },
     {
         "id": "goose",
-        "question": "Кого в этой истории называют «гусь»?",
+        "question": "Кого называют «гусь»?",
         "options": [
             ("egor", "Егор Супицкий"),
             ("andrey_yashin", "Андрей Яшин"),
@@ -144,7 +144,7 @@ QUESTIONS = [
     },
     {
         "id": "club",
-        "question": "К какому сообществу относится Константин Вайтович?",
+        "question": "К какой банде относится Константин Вайтович?",
         "options": [
             ("rot_koltsom", "«Рот кольцом»"),
             ("bluds", "«Бладсы»"),
@@ -177,7 +177,7 @@ QUESTIONS = [
     },
     {
         "id": "countryman",
-        "question": "Кого в этой истории называют «земляк»?",
+        "question": "Кого называют «селюк»?",
         "options": [
             ("artem", "Артём Новиков"),
             ("anatoly", "Анатолий Маркин"),
@@ -219,6 +219,138 @@ QUESTIONS = [
         ],
         "correct": "pasture",
     },
+    {
+        "id": "pekonidi_birthplace",
+        "question": "В какой республике родился Владислав Пекониди?",
+        "options": [
+            ("chechnya", "Чеченская"),
+            ("komi", "Коми"),
+            ("buryatia", "Бурятская "),
+            ("dagestan", "Дагестан"),
+        ],
+        "correct": "chechnya",
+    },
+    {
+        "id": "saveliev_surname",
+        "question": "Какая настоящая фамилия Влада Савельева?",
+        "options": [
+            ("urban", "Урбан"),
+            ("saveliev", "Савельев"),
+            ("pudge", "Пудж"),
+            ("vlad", "Влад"),
+        ],
+        "correct": "urban",
+    },
+    {
+        "id": "markin_celebrity",
+        "question": "Для какой знаменитости Анатолий Маркин записывает обращения на английском?",
+        "options": [
+            ("daniela_bradbery", "Дэниэла Брэдбери"),
+            ("lindsay_lohan", "Линдси Лохан"),
+            ("kendrick_lamar", "Кендрик Ламар"),
+            ("donald_trump", "Дональд Трамп"),
+        ],
+        "correct": "daniela_bradbery",
+    },
+    {
+        "id": "moskalev_nickname",
+        "question": "От какого слова пошло прозвище Алексея Москалева?",
+        "options": [
+            ("shashlyk", "Шашлык"),
+            ("shishka", "Шишка"),
+            ("shishak", "Шишак"),
+            ("shueshnik", "ШУЕшник"),
+        ],
+        "correct": "shashlyk",
+    },
+    {
+        "id": "shue_number",
+        "question": "Какое число соответстсвует ШУЕ?",
+        "options": [
+            ("357", "357"),
+            ("1488", "1488"),
+            ("228", "228"),
+            ("1337", "1337"),
+        ],
+        "correct": "357",
+    },
+    {
+        "id": "saveliev_toothbrush",
+        "question": "Чем Влад Савельев НЕ чистил зубы? ",
+        "options": [
+            ("toothpaste", "Зубной пастой"),
+            ("shampoo", "Шампунем"),
+            ("mayonnaise", "Майонезом"),
+            ("ketchup", "Кетчупом"),
+        ],
+        "correct": "ketchup",
+    },
+    {
+        "id": "alive_character",
+        "question": "Кто из этих персонажей сейчас жив?",
+        "options": [
+            ("king_kong", "Кинг-конг"),
+            ("aaron", "Аарон"),
+            ("rupert", "Руперт"),
+            ("catharsis", "Катарсис"),
+        ],
+        "correct": "rupert",
+    },
+    {
+        "id": "german_shue_phrase",
+        "question": "Какую фразу НЕ кричит Герман Василенко при ШУЕ?",
+        "options": [
+            ("hali_gali", "Хали-гали"),
+            ("shakira", "Шакира Шакира Шакира"),
+            ("to_be", "Ту биз"),
+            ("dynasty", "Династия"),
+        ],
+        "correct": "dynasty",
+    },
+    {
+        "id": "summer_2024_country",
+        "question": "В какой стране летом 2024 отдыхали Кирилл Зырянов, Герман Василенко, Владислав Пекониди и другие?",
+        "options": [
+            ("thailand", "Тайланд"),
+            ("taiwan", "Тайвань"),
+            ("vietnam", "Вьетнам"),
+            ("bolivia", "Боливия"),
+        ],
+        "correct": "thailand",
+    },
+    {
+        "id": "torogoyakov_museum",
+        "question": "Музей чего открыл Кирилл Торгояков?",
+        "options": [
+            ("teapots", "Чайников"),
+            ("irons", "Утюгов"),
+            ("eggs", "Яиц"),
+            ("jokes", "Приколов"),
+        ],
+        "correct": "irons",
+    },
+    {
+        "id": "torogoyakov_music_genre",
+        "question": "В каком жанре пишет музыку Кирилл Торгояков?",
+        "options": [
+            ("reyp", "Рейп"),
+            ("rep", "Реп"),
+            ("pop", "Поп"),
+            ("kpop", "Кпоп"),
+        ],
+        "correct": "reyp",
+    },
+    {
+        "id": "favorite_food",
+        "question": "Чем любят кормить персонажей в нижнем интернете? ",
+        "options": [
+            ("onions", "Луком"),
+            ("pizza", "Пиццей"),
+            ("apples", "Яблоками"),
+            ("asparagus", "Спаржей"),
+        ],
+        "correct": "onions",
+    },
 ]
 
 TITLE_RANGES = (
@@ -226,7 +358,7 @@ TITLE_RANGES = (
     (80, 94, "Безумец", "title-mad"),
     (65, 79, "Знаток", "title-expert"),
     (50, 64, "Почётный зритель", "title-viewer"),
-    (0, 49, "Позёр", "title-poser"),
+    (0, 49, "Позер", "title-poser"),
 )
 
 

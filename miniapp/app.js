@@ -33,10 +33,38 @@
   }
 
   function displayName(profile) {
-    const title = profile.quiz_title
-      ? `<small class="user-title-inline ${quizTitleClass(profile.quiz_title)}">${escapeHtml(profile.quiz_title)}</small>`
+    return `<span class="display-name">
+      ${escapeHtml(profile.name)}${renderQuizTitle(
+        profile.quiz_title,
+        profile.quiz_percent,
+        profile.gender,
+      )}
+    </span>`;
+  }
+
+  function renderQuizTitle(title, percent, gender) {
+    if (!title) return "";
+    const hasPercent = percent !== null && percent !== undefined && percent !== "";
+    const percentValue = hasPercent && Number.isFinite(Number(percent))
+      ? Number(percent)
       : "";
-    return `${escapeHtml(profile.name)}${title}`;
+    return `<span class="user-title-inline ${quizTitleClass(title)}"
+      role="button" tabindex="0" data-quiz-title data-percent="${percentValue}"
+      data-gender="${escapeHtml(gender || "")}"
+      aria-label="Звание: ${escapeHtml(title)}">${escapeHtml(title)}</span>`;
+  }
+
+  function showQuizTitlePopup(badge) {
+    const pronoun = badge.dataset.gender === "female" ? "Она" : "Он";
+    const percent = badge.dataset.percent;
+    const message = percent === ""
+      ? `${pronoun} пока не проходил${pronoun === "Она" ? "а" : ""} тест.`
+      : `${pronoun} знает нижний интернет на ${percent} процентов`;
+    if (typeof telegram?.showPopup === "function") {
+      telegram.showPopup({ message, buttons: [{ type: "ok" }] });
+    } else {
+      window.alert(message);
+    }
   }
 
   function quizTitleClass(title) {
@@ -50,6 +78,23 @@
       "Лега": "title-lega",
     })[title] || "";
   }
+
+  main.addEventListener("click", (event) => {
+    const badge = event.target.closest("[data-quiz-title]");
+    if (!badge) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showQuizTitlePopup(badge);
+  }, true);
+
+  main.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const badge = event.target.closest("[data-quiz-title]");
+    if (!badge) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showQuizTitlePopup(badge);
+  }, true);
 
   async function api(path, options = {}) {
     const initData = telegram?.initData;
@@ -535,7 +580,7 @@
       <h1 class="page-heading">Твои чаты</h1>
       <section class="content-list">
         ${result.chats.map((chat) => `
-          <button class="person-row" data-open-chat="${chat.id}">
+          <div class="person-row" data-open-chat="${chat.id}" role="button" tabindex="0">
             ${chat.has_photo ? `<img class="avatar" data-photo-id="${chat.id}" alt="">` : `<span class="avatar"></span>`}
             <span class="person-copy">
               <span class="person-name">${displayName(chat)}, ${chat.age}</span>
@@ -545,13 +590,18 @@
                 : ""}
             </span>
             ${chat.unread_count ? `<span class="unread">${chat.unread_count}</span>` : ""}
-          </button>`).join("")}
+          </div>`).join("")}
       </section>`;
     main.querySelectorAll("[data-photo-id]").forEach((image) => {
       loadPhoto(Number(image.dataset.photoId), image);
     });
     main.querySelectorAll("[data-open-chat]").forEach((button) => {
       button.addEventListener("click", () => runAction(() => openChat(Number(button.dataset.openChat))));
+      button.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        runAction(() => openChat(Number(button.dataset.openChat)));
+      });
     });
   }
 
@@ -882,8 +932,7 @@
           <li><span class="title-mad">Безумец</span><strong>80–94%</strong></li>
           <li><span class="title-expert">Знаток</span><strong>65–79%</strong></li>
           <li><span class="title-viewer">Почётный зритель</span><strong>50–64%</strong></li>
-          <li><span class="title-poser">Позёр</span><strong>меньше 50%</strong></li>
-          <li><span class="title-lega">Лега</span><strong>Администратор</strong></li>
+          <li><span class="title-poser">Позер</span><strong>меньше 50%</strong></li>
         </ul>
       </section>
       <section class="quiz-leaderboard">
@@ -945,8 +994,12 @@
             <span class="quiz-rank-number">${entry.rank}</span>
             <span class="quiz-ranking-user">
               <span class="quiz-ranking-name">
-                ${escapeHtml(entry.name)}
-                ${entry.title ? `<small class="user-title-inline ${quizTitleClass(entry.title)}">${escapeHtml(entry.title)}</small>` : ""}
+                ${displayName({
+                  name: entry.name,
+                  quiz_title: entry.title,
+                  quiz_percent: entry.percent,
+                  gender: entry.gender,
+                })}
               </span>
               <small>${entry.score}/${entry.total_questions} правильных</small>
             </span>
@@ -967,15 +1020,15 @@
         ? "Безлимитные попытки"
         : `Попыток после старта: ${session.attempts_remaining}`}</p>
       <h1 class="page-heading">Тест</h1>
-      <p class="settings-description">
-        ${session.questions.length} вопросов. Вопросы и варианты ответов перемешаны.
-        Отвечай на все вопросы и отправь результат.
-      </p>
+      <p class="settings-description">Ответь на все вопросы и отправь результат.</p>
       <form class="quiz-form" id="quiz-form">
         ${session.questions.map((question, index) => `
           <fieldset class="quiz-question-card" data-question-id="${escapeHtml(question.id)}">
-            <legend><span>${index + 1}.</span> ${escapeHtml(question.question)}</legend>
-            <div class="quiz-options">
+              <legend class="visually-hidden">${index + 1}. ${escapeHtml(question.question)}</legend>
+              <h2 class="quiz-question-title">
+                <span>${index + 1}.</span> ${escapeHtml(question.question)}
+              </h2>
+              <div class="quiz-options">
               ${question.options.map((option) => `
                 <label class="quiz-option">
                   <input type="radio" name="${escapeHtml(question.id)}"
