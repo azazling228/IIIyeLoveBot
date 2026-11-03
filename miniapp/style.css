@@ -208,6 +208,11 @@ button { color: inherit; }
   object-fit: cover;
   background: linear-gradient(145deg, #54245b, #f451a8);
 }
+.profile-photo:not(.profile-photo-placeholder) {
+  height: auto;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
 .profile-card::after { content: none; }
 .profile-info {
   z-index: 1;
