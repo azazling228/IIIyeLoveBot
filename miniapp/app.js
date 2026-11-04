@@ -431,7 +431,9 @@
           <div class="profile-info">
             <h1 class="profile-title">${displayName(profile)}<span class="profile-age">, ${profile.age}</span></h1>
             <p class="profile-meta">⌖ ${escapeHtml(profile.city)}</p>
-            ${profile.description ? `<p class="profile-description">${escapeHtml(profile.description)}</p>` : ""}
+            ${profile.description
+              ? `<p class="profile-description"><strong>О себе:</strong> ${escapeHtml(profile.description)}</p>`
+              : ""}
             ${profile.quiz_percent !== null && profile.quiz_percent !== undefined
               ? `<p class="profile-quiz-rating">♛ Рейтинг теста: ${profile.quiz_percent}%</p>`
               : ""}
