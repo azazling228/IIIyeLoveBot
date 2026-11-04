@@ -631,6 +631,17 @@ button { color: inherit; }
 .quiz-stat { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .quiz-stat strong { color: var(--rose); font-size: 18px; text-shadow: 0 0 12px rgba(255, 79, 200, .3); }
 .quiz-stat span { color: var(--muted); font-size: 13px; text-align: right; }
+.quiz-attempt-policy {
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 79, 200, .06);
+}
+.quiz-attempt-policy strong { color: var(--rose); font-size: 13px; }
+.quiz-attempt-policy p,
+.quiz-attempt-policy small { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .quiz-title-line { justify-self: center; font-size: 18px; font-weight: 850; }
 .quiz-title-toggle {
   position: relative;
