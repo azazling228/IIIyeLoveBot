@@ -466,6 +466,31 @@ button { color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .chat-back { border: 0; background: none; color: var(--rose-dark); font-size: 25px; }
+.back-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--rose-dark);
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.back-button:active { transform: translateY(1px); }
+.chat-profile-link {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 13px;
+  cursor: pointer;
+}
 .chat-messages { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 16px 0; }
 .bubble {
   display: grid;
