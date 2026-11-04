@@ -921,10 +921,10 @@
           <strong>${quiz.unlimited_attempts ? "∞" : quiz.attempts_remaining}</strong>
           <span>Попыток осталось</span>
         </div>
+        <p class="quiz-question-count">Количество вопросов в тесте: ${quiz.question_count}</p>
         <aside class="quiz-attempt-policy" aria-label="Условия начисления попыток">
           <strong>Как начисляются попытки</strong>
           <p>При регистрации даются 2 попытки. Затем 1-го числа месяца добавляется 1 попытка, только если предыдущие закончились. Неиспользованные попытки сохраняются. Попытка списывается при запуске теста.</p>
-          ${quiz.unlimited_attempts ? "<small>У администратора попытки не ограничены.</small>" : ""}
         </aside>
         ${quiz.title ? `<div class="quiz-title-line ${quizTitleClass(quiz.title)}">${escapeHtml(quiz.title)}</div>` : ""}
         ${quiz.has_result || quiz.unlimited_attempts

@@ -631,6 +631,7 @@ button { color: inherit; }
 .quiz-stat { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .quiz-stat strong { color: var(--rose); font-size: 18px; text-shadow: 0 0 12px rgba(255, 79, 200, .3); }
 .quiz-stat span { color: var(--muted); font-size: 13px; text-align: right; }
+.quiz-question-count { margin: 0; color: var(--muted); font-size: 13px; }
 .quiz-attempt-policy {
   display: grid;
   gap: 5px;
