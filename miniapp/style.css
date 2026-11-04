@@ -483,14 +483,7 @@ button { color: inherit; }
   cursor: pointer;
 }
 .back-button:active { transform: translateY(1px); }
-.chat-profile-link {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 13px;
-  cursor: pointer;
-}
+.chat-header-profile { cursor: pointer; }
 .chat-messages { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 16px 0; }
 .bubble {
   display: grid;

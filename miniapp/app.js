@@ -651,15 +651,13 @@
       <section class="content-list">
         ${result.chats.map((chat) => `
           <div class="person-row" data-open-chat="${chat.id}" role="button" tabindex="0">
-            <span class="chat-profile-link" data-open-profile="${chat.id}" role="button" tabindex="0">
-              ${chat.has_photo ? `<img class="avatar" data-photo-id="${chat.id}" alt="">` : `<span class="avatar"></span>`}
-              <span class="person-copy">
+            ${chat.has_photo ? `<img class="avatar" data-photo-id="${chat.id}" alt="">` : `<span class="avatar"></span>`}
+            <span class="person-copy">
               <span class="person-name">${displayName(chat)}, ${chat.age}</span>
               <span class="person-preview">${escapeHtml(chat.last_message || chat.city)}</span>
               ${chat.quiz_percent !== null && chat.quiz_percent !== undefined
                 ? `<small class="quiz-card-rating">♛ ${chat.quiz_percent}%</small>`
                 : ""}
-              </span>
             </span>
             ${chat.unread_count ? `<span class="unread">${chat.unread_count}</span>` : ""}
           </div>`).join("")}
@@ -668,26 +666,11 @@
       loadPhoto(Number(image.dataset.photoId), image);
     });
     main.querySelectorAll("[data-open-chat]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        if (event.target.closest("[data-open-profile]")) return;
-        runAction(() => openChat(Number(button.dataset.openChat)));
-      });
+      button.addEventListener("click", () => runAction(() => openChat(Number(button.dataset.openChat))));
       button.addEventListener("keydown", (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         runAction(() => openChat(Number(button.dataset.openChat)));
-      });
-    });
-    main.querySelectorAll("[data-open-profile]").forEach((link) => {
-      link.addEventListener("click", (event) => {
-        event.stopPropagation();
-        runAction(() => openPublicProfile(Number(link.dataset.openProfile)));
-      });
-      link.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        event.stopPropagation();
-        runAction(() => openPublicProfile(Number(link.dataset.openProfile)));
       });
     });
   }
@@ -853,7 +836,8 @@
         <header class="chat-header">
           <button id="back-chats" class="chat-back" aria-label="Назад">‹</button>
           ${partner.has_photo ? `<img class="avatar" id="chat-photo" alt="">` : `<span class="avatar"></span>`}
-          <div class="person-copy">
+          <div class="person-copy chat-header-profile" data-open-profile="${partner.id}"
+            role="button" tabindex="0">
             <span class="person-name">${displayName(partner)}, ${partner.age}</span>
             <span class="person-preview">${escapeHtml(partner.city)}</span>
           </div>
@@ -874,6 +858,13 @@
         </div>
       </section>`;
     document.getElementById("back-chats").addEventListener("click", loadChats);
+    const headerProfile = main.querySelector("[data-open-profile]");
+    headerProfile.addEventListener("click", () => runAction(() => openPublicProfile(partner.id)));
+    headerProfile.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      runAction(() => openPublicProfile(partner.id));
+    });
     document.getElementById("chat-form").addEventListener("submit", sendChatMessage);
     document.getElementById("chat-file").addEventListener("change", (event) => {
       state.pendingFile = event.currentTarget.files[0] || null;
