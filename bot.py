@@ -48,7 +48,7 @@ from database import (
     get_messages,
     delete_match,
     update_profile_city,
-    update_profile_photo,
+    update_profile_photos,
     message_matches_banned_words,
     is_report_notified,
     mark_report_notified,
@@ -713,8 +713,8 @@ async def registration_description(
     await state.update_data(description=description)
     await state.set_state(Registration.photo)
     await message.answer(
-        "📸 Теперь отправь свою фотографию.\n\n"
-        "Лучше отправить обычную фотографию через Telegram, а не файл."
+        "📸 Теперь отправь от 1 до 3 фотографий.\n\n"
+        "После этого напиши «Готово». Лучше отправлять обычные фотографии через Telegram, а не файлы."
     )
 
 # ==========================================
@@ -726,13 +726,6 @@ async def registration_photo(
     message: Message,
     state: FSMContext,
 ):
-    if not message.photo:
-        await message.answer(
-            "📸 Я не вижу фотографию.\n\n"
-            "Отправь именно фотографию через Telegram."
-        )
-        return
-    photo_file_id = message.photo[-1].file_id
     data = await state.get_data()
     required_fields = (
         "name",
@@ -752,7 +745,25 @@ async def registration_photo(
             reply_markup=ReplyKeyboardRemove(),
         )
         return
-    await state.update_data(photo_file_id=photo_file_id)
+    photo_file_ids = data.get("photo_file_ids", [])
+    if message.photo:
+        photo_file_ids = [*photo_file_ids, message.photo[-1].file_id][:3]
+        await state.update_data(photo_file_ids=photo_file_ids)
+        if len(photo_file_ids) < 3:
+            await message.answer(
+                f"Фото добавлено ({len(photo_file_ids)}/3).\n\n"
+                "Можешь отправить ещё фото или напиши «Готово», чтобы сохранить анкету."
+            )
+            return
+    elif (message.text or "").strip().casefold() != "готово":
+        await message.answer(
+            "📸 Отправь фотографию или напиши «Готово» после загрузки фото."
+        )
+        return
+    if not photo_file_ids:
+        await message.answer("Отправь хотя бы одну фотографию.")
+        return
+    photo_file_id = photo_file_ids[0]
     create_user(
         telegram_id=message.from_user.id,
         name=data["name"],
@@ -764,6 +775,7 @@ async def registration_photo(
         search_age_max=data["search_age_max"],
         photo_file_id=photo_file_id,
         description=data["description"],
+        photo_file_ids=photo_file_ids,
     )
     await state.clear()
     await message.answer(
@@ -1877,7 +1889,10 @@ async def start_edit_photo(
         return
     await state.set_state(Registration.edit_photo)
     await callback.answer()
-    await callback.message.answer("📸 Отправь новую фотографию.")
+    await callback.message.answer(
+        "📸 Отправь от 1 до 3 фотографий.\n\n"
+        "Когда закончишь, напиши «Готово». Старые фотографии будут заменены."
+    )
 
 @dp.callback_query(
     lambda callback: callback.data == "profile_edit_city"
@@ -1962,10 +1977,24 @@ async def edit_profile_photo(
     message: Message,
     state: FSMContext,
 ):
-    if not message.photo:
-        await message.answer("Отправь именно фотографию через Telegram.")
+    data = await state.get_data()
+    photo_file_ids = data.get("photo_file_ids", [])
+    if message.photo:
+        photo_file_ids = [*photo_file_ids, message.photo[-1].file_id][:3]
+        await state.update_data(photo_file_ids=photo_file_ids)
+        if len(photo_file_ids) < 3:
+            await message.answer(
+                f"Фото добавлено ({len(photo_file_ids)}/3). "
+                "Отправь ещё фото или напиши «Готово»."
+            )
+            return
+    elif (message.text or "").strip().casefold() != "готово":
+        await message.answer("Отправь фотографию или напиши «Готово».")
         return
-    update_profile_photo(message.from_user.id, message.photo[-1].file_id)
+    if not photo_file_ids:
+        await message.answer("Отправь хотя бы одну фотографию.")
+        return
+    update_profile_photos(message.from_user.id, photo_file_ids)
     await state.clear()
     await message.answer("✅ Фотография обновлена!", reply_markup=main_keyboard)
 

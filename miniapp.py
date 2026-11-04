@@ -29,6 +29,7 @@ from database import (
     get_messages,
     get_next_profile,
     get_user,
+    get_profile_photo_ids,
     get_connection,
     get_quiz_best_result,
     get_quiz_leaderboard,
@@ -122,6 +123,7 @@ def _quiz_title_for_user(user_id, rating, admin_id, show_title=None):
 
 def _profile_payload(profile, admin_id=None):
     rating = get_quiz_rating(profile["telegram_id"])
+    photo_ids = get_profile_photo_ids(profile)
     return {
         "id": profile["telegram_id"],
         "name": profile["name"],
@@ -129,7 +131,11 @@ def _profile_payload(profile, admin_id=None):
         "gender": profile["gender"],
         "city": profile["city"],
         "description": profile["description"] or "",
-        "has_photo": bool(profile["photo_file_id"]),
+        "has_photo": bool(photo_ids),
+        "photos": [
+            f"/api/profiles/{profile['telegram_id']}/photos/{index}"
+            for index in range(len(photo_ids))
+        ],
         "quiz_percent": rating["percent"] if rating else None,
         "quiz_title": _quiz_title_for_user(
             profile["telegram_id"],
@@ -655,13 +661,16 @@ def create_miniapp_app(bot, bot_token, admin_id=None):
     async def profile_photo(request):
         try:
             profile_id = int(request.match_info["profile_id"])
+            photo_index = int(request.match_info.get("photo_index", 0))
         except ValueError:
             raise web.HTTPNotFound()
         user_id = request["telegram_id"]
         profile = get_user(profile_id)
+        photo_ids = get_profile_photo_ids(profile) if profile else []
         if (
             not profile
-            or not profile["photo_file_id"]
+            or photo_index < 0
+            or photo_index >= len(photo_ids)
             or is_blocked(user_id, profile_id)
             or (
                 profile_id != user_id
@@ -673,7 +682,7 @@ def create_miniapp_app(bot, bot_token, admin_id=None):
         ):
             raise web.HTTPNotFound()
         try:
-            telegram_file = await bot.get_file(profile["photo_file_id"])
+            telegram_file = await bot.get_file(photo_ids[photo_index])
             image = BytesIO()
             await bot.download_file(telegram_file.file_path, destination=image)
         except TelegramAPIError:
@@ -684,6 +693,21 @@ def create_miniapp_app(bot, bot_token, admin_id=None):
             content_type="image/jpeg",
             headers={"Cache-Control": "private, no-store"},
         )
+
+    async def public_profile(request):
+        user_id = request["telegram_id"]
+        try:
+            profile_id = int(request.match_info["profile_id"])
+        except ValueError:
+            return _json_error("Profile not found.", 404)
+        profile = get_user(profile_id)
+        if (
+            not profile
+            or profile_id == user_id
+            or is_blocked(user_id, profile_id)
+        ):
+            return _json_error("Profile not found.", 404)
+        return web.json_response({"profile": _profile_payload(profile, admin_id)})
 
     async def discover_decision(request):
         user_id = request["telegram_id"]
@@ -1129,6 +1153,8 @@ def create_miniapp_app(bot, bot_token, admin_id=None):
     app.router.add_post("/api/discover/reset", reset_discovery)
     app.router.add_post("/api/discover/decision", discover_decision)
     app.router.add_get("/api/profiles/{profile_id}/photo", profile_photo)
+    app.router.add_get("/api/profiles/{profile_id}/photos/{photo_index}", profile_photo)
+    app.router.add_get("/api/profiles/{profile_id}", public_profile)
     app.router.add_get("/api/likes", incoming_likes)
     app.router.add_post("/api/likes/respond", respond_to_like)
     app.router.add_get("/api/chats", chats)

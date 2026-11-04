@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 
 os.makedirs("/app/data", exist_ok=True)
@@ -35,6 +36,7 @@ def init_database():
                 search_age_min INTEGER NOT NULL,
                 search_age_max INTEGER NOT NULL,
                 photo_file_id TEXT,
+                photo_file_ids TEXT NOT NULL DEFAULT '[]',
                 description TEXT,
                 total_likes_received INTEGER NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
@@ -59,6 +61,11 @@ def init_database():
             connection.execute("""
                 ALTER TABLE users
                 ADD COLUMN photo_file_id TEXT
+            """)
+        if "photo_file_ids" not in column_names:
+            connection.execute("""
+                ALTER TABLE users
+                ADD COLUMN photo_file_ids TEXT NOT NULL DEFAULT '[]'
             """)
         if "description" not in column_names:
             connection.execute("""
@@ -324,7 +331,8 @@ def create_user(
     search_age_min,
     search_age_max,
     photo_file_id,
-    description=""
+    description="",
+    photo_file_ids=None,
 ):
     connection = get_connection()
     try:
@@ -340,9 +348,10 @@ def create_user(
                 search_age_min,
                 search_age_max,
                 photo_file_id,
+                photo_file_ids,
                 description
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 telegram_id,
@@ -354,6 +363,7 @@ def create_user(
                 search_age_min,
                 search_age_max,
                 photo_file_id,
+                json.dumps(photo_file_ids or [photo_file_id], ensure_ascii=False),
                 description,
             )
         )
@@ -491,6 +501,40 @@ def update_profile_photo(telegram_id, photo_file_id):
         connection.commit()
     finally:
         connection.close()
+
+
+def update_profile_photos(telegram_id, photo_file_ids):
+    photo_file_ids = list(photo_file_ids)
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            """
+            UPDATE users
+            SET photo_file_id = ?, photo_file_ids = ?
+            WHERE telegram_id = ?
+            """,
+            (
+                photo_file_ids[0] if photo_file_ids else None,
+                json.dumps(photo_file_ids, ensure_ascii=False),
+                telegram_id,
+            ),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def get_profile_photo_ids(user):
+    raw_photo_ids = user["photo_file_ids"] if "photo_file_ids" in user.keys() else ""
+    try:
+        photo_ids = json.loads(raw_photo_ids or "[]")
+    except (TypeError, json.JSONDecodeError):
+        photo_ids = []
+    photo_ids = [photo_id for photo_id in photo_ids if isinstance(photo_id, str) and photo_id]
+    if not photo_ids and user["photo_file_id"]:
+        photo_ids = [user["photo_file_id"]]
+    return photo_ids[:3]
 
 # ==========================================
 # ПОИСК АНКЕТ

@@ -213,6 +213,31 @@ button { color: inherit; }
   aspect-ratio: auto;
   object-fit: contain;
 }
+.profile-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+.gallery-photo,
+.profile-gallery-placeholder {
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  border-radius: 17px;
+  object-fit: contain;
+  background: linear-gradient(145deg, #54245b, #f451a8);
+}
+.profile-gallery-placeholder { min-height: 92px; }
+.own-profile-gallery {
+  flex: 0 0 92px;
+  width: 92px;
+}
+.own-profile-gallery .gallery-photo {
+  aspect-ratio: 1 / 1;
+  border-radius: 26px;
+}
+.public-profile-panel .profile-gallery { margin-bottom: 14px; }
 .profile-card::after { content: none; }
 .profile-info {
   z-index: 1;

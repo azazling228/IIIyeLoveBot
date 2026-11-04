@@ -182,24 +182,46 @@
     document.getElementById("retry").addEventListener("click", () => loadTab(state.tab));
   }
 
-  async function loadPhoto(profileId, image) {
-    if (photoCache.has(profileId)) {
-      image.src = photoCache.get(profileId);
+  async function loadPhoto(profileId, image, photoIndex = 0) {
+    const cacheKey = `${profileId}:${photoIndex}`;
+    if (photoCache.has(cacheKey)) {
+      image.src = photoCache.get(cacheKey);
       return;
     }
     try {
       const initData = telegram?.initData;
       if (!initData) return;
-      const response = await fetch(`/api/profiles/${profileId}/photo`, {
+      const response = await fetch(`/api/profiles/${profileId}/photos/${photoIndex}`, {
         headers: { Authorization: `tma ${initData}` },
       });
       if (!response.ok) return;
       const objectUrl = URL.createObjectURL(await response.blob());
-      photoCache.set(profileId, objectUrl);
+      photoCache.set(cacheKey, objectUrl);
       image.src = objectUrl;
     } catch (error) {
       console.error("Could not load profile photo", error);
     }
+  }
+
+  function renderPhotoGallery(profile, className = "") {
+    if (!profile.photos?.length) {
+      return `<div class="profile-gallery-placeholder ${className}" aria-label="Фото нет"></div>`;
+    }
+    return `<div class="profile-gallery ${className}">
+      ${profile.photos.map((_, index) => `
+        <img class="gallery-photo" data-photo-id="${profile.id}"
+          data-photo-index="${index}" alt="Фото профиля ${index + 1}">`).join("")}
+    </div>`;
+  }
+
+  function loadGalleryPhotos(container = main) {
+    container.querySelectorAll("[data-photo-index]").forEach((image) => {
+      loadPhoto(
+        Number(image.dataset.photoId),
+        image,
+        Number(image.dataset.photoIndex),
+      );
+    });
   }
 
   async function loadChatMedia(partnerId, messageId, element) {
@@ -425,9 +447,7 @@
       ${renderDiscoveryToolbar()}
       <section class="discover-wrap">
         <article class="profile-card">
-          ${profile.has_photo
-            ? `<img class="profile-photo" id="discover-photo" alt="">`
-            : `<div class="profile-photo profile-photo-placeholder" aria-hidden="true"></div>`}
+          ${renderPhotoGallery(profile, "discover-gallery")}
           <div class="profile-info">
             <h1 class="profile-title">${displayName(profile)}<span class="profile-age">, ${profile.age}</span></h1>
             <p class="profile-meta">⌖ ${escapeHtml(profile.city)}</p>
@@ -451,9 +471,11 @@
         </div>
       </section>`;
     bindSearchSettings();
-    if (profile.has_photo) {
-      loadPhoto(profile.id, document.getElementById("discover-photo"));
-    }
+    loadGalleryPhotos();
+    main.querySelector(".profile-card").addEventListener("click", (event) => {
+      if (event.target.closest("button, a")) return;
+      runAction(() => openPublicProfile(profile.id));
+    });
     document.getElementById("skip-profile").addEventListener("click", () => runAction(() => decide("skip")));
     document.getElementById("like-profile").addEventListener("click", () => runAction(() => decide("like")));
     document.getElementById("message-like-profile").addEventListener(
@@ -543,7 +565,7 @@
       return;
     }
     const cards = state.likes.map((profile) => `
-      <article class="person-row like-row" data-id="${profile.id}">
+      <article class="person-row like-row" data-id="${profile.id}" data-open-profile="${profile.id}" role="button" tabindex="0">
         ${profile.has_photo ? `<img class="avatar" data-photo-id="${profile.id}" alt="">` : `<div class="avatar"></div>`}
         <span class="person-copy">
           <span class="person-name">${displayName(profile)}, ${profile.age}</span>
@@ -564,6 +586,17 @@
     main.querySelectorAll("[data-photo-id]").forEach((image) => {
       loadPhoto(Number(image.dataset.photoId), image);
     });
+    main.querySelectorAll("[data-open-profile]").forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("button, a")) return;
+        runAction(() => openPublicProfile(Number(row.dataset.openProfile)));
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        runAction(() => openPublicProfile(Number(row.dataset.openProfile)));
+      });
+    });
     main.querySelectorAll("[data-like-back]").forEach((button) => {
       button.addEventListener("click", () => runAction(() => respondToLike(Number(button.dataset.likeBack), "like")));
     });
@@ -579,6 +612,29 @@
     });
     if (result.matched) showToast("Это взаимно! У вас мэтч 💘");
     await loadLikes();
+  }
+
+  async function openPublicProfile(profileId) {
+    const result = await api(`/api/profiles/${profileId}`);
+    const profile = result.profile;
+    main.innerHTML = `
+      <button class="back-button" id="close-public-profile" type="button">‹ Назад</button>
+      <h1 class="page-heading">${escapeHtml(profile.name)}, ${profile.age}</h1>
+      <section class="profile-panel public-profile-panel">
+        ${renderPhotoGallery(profile, "public-gallery")}
+        <p class="profile-meta">⌖ ${escapeHtml(profile.city)}</p>
+        ${profile.description
+          ? `<p class="public-profile-description">${escapeHtml(profile.description)}</p>`
+          : "<p class=\"profile-hint\">Пользователь не добавил описание.</p>"}
+        ${profile.quiz_percent !== null && profile.quiz_percent !== undefined
+          ? `<p class="profile-quiz-rating">♛ Рейтинг теста: ${profile.quiz_percent}%</p>`
+          : ""}
+      </section>`;
+    loadGalleryPhotos();
+    document.getElementById("close-public-profile").addEventListener(
+      "click",
+      () => loadTab(state.tab),
+    );
   }
 
   async function loadChats() {
@@ -638,7 +694,7 @@
       <section class="content-list">
         ${result.matches.map((match) => `
           <article class="match-card">
-            <div class="person-row match-person">
+            <div class="person-row match-person" data-open-profile="${match.id}" role="button" tabindex="0">
               ${match.has_photo ? `<img class="avatar" data-photo-id="${match.id}" alt="">` : `<span class="avatar"></span>`}
               <span class="person-copy">
                 <span class="person-name">${displayName(match)}, ${match.age}</span>
@@ -662,6 +718,17 @@
       </section>`;
     main.querySelectorAll("[data-photo-id]").forEach((image) => {
       loadPhoto(Number(image.dataset.photoId), image);
+    });
+    main.querySelectorAll("[data-open-profile]").forEach((row) => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("button, a")) return;
+        runAction(() => openPublicProfile(Number(row.dataset.openProfile)));
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        runAction(() => openPublicProfile(Number(row.dataset.openProfile)));
+      });
     });
     main.querySelectorAll("[data-open-match]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1151,7 +1218,7 @@
       <h1 class="page-heading">Твоя анкета</h1>
       <section class="profile-panel">
         <div class="profile-identity">
-          ${profile.has_photo ? `<img class="avatar" id="my-photo" alt="">` : `<div class="avatar"></div>`}
+          ${renderPhotoGallery(profile, "own-profile-gallery")}
           <div class="profile-identity-copy">
             <h2>${displayName(profile)}<span class="profile-age">, ${profile.age}</span></h2>
             <p>⌖ ${escapeHtml(profile.city)}</p>
@@ -1159,7 +1226,7 @@
         </div>
         ${profile.description ? `<p>${escapeHtml(profile.description)}</p>` : ""}
         <button class="primary-button" id="edit-profile">Редактировать анкету</button>
-        <p class="profile-hint">Фотографию можно изменить в чате с ботом.</p>
+        <p class="profile-hint">Фотографии можно изменить в чате с ботом.</p>
       </section>`;
     main.insertAdjacentHTML("beforeend", `
       <section class="profile-stats-card" aria-label="Статистика профиля">
@@ -1242,8 +1309,7 @@
           <div id="profile-settings-content"></div>
         </section>
       </div>`);
-    const photo = document.getElementById("my-photo");
-    if (photo) loadPhoto(profile.id, photo);
+    loadGalleryPhotos();
     document.getElementById("edit-profile").addEventListener(
       "click",
       renderProfileEditor,
