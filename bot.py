@@ -1261,29 +1261,11 @@ async def like_profile(callback: CallbackQuery):
                 like_keyboard = create_like_back_keyboard(
                     user["telegram_id"]
                 )
-                if user["photo_file_id"] and len(like_caption) <= 1024:
+                if user["photo_file_id"]:
                     await bot.send_photo(
                         chat_id=profile_id,
                         photo=user["photo_file_id"],
-                        caption=like_caption,
-                        reply_markup=like_keyboard,
-                    )
-                elif user["photo_file_id"]:
-                    await bot.send_photo(
-                        chat_id=profile_id,
-                        photo=user["photo_file_id"],
-                        caption=(
-                            "❤️ Тебе поставили лайк!\n"
-                            f"👤 {user['name']}, {user['age']} лет\n"
-                            f"📍 {user['city']}"
-                        ),
-                    )
-                    await bot.send_message(
-                        chat_id=profile_id,
-                        text=(
-                            f"📝 Описание:\n\n{user['description']}\n\n"
-                            "Хочешь поставить лайк в ответ?"
-                        ),
+                        caption=limit_caption(like_caption),
                         reply_markup=like_keyboard,
                     )
                 else:
