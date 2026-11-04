@@ -417,6 +417,160 @@ QUESTIONS = [
         ],
         "correct": "vaytik",
     },
+    {
+        "id": "dmitry_tattoo",
+        "question": "Какая тату у мальчика Горло на животе?",
+        "options": [
+            ("crank", "Крэнк"),
+            ("ludojop_top", "Лудожоп топ"),
+            ("russian_flag", "Флаг РФ"),
+            ("waiting_for_boy", "Жду мальчика"),
+        ],
+        "correct": "crank",
+    },
+    {
+        "id": "german_tattoo",
+        "question": "Какая татуировка у Германа Василенко на животе?",
+        "options": [
+            ("ludojop_top", "Лудожоп топ"),
+            ("watermelon", "Арбуз"),
+            ("fish_beer", "Рыба с пивом"),
+            ("masha_forever", "Маша 4ever"),
+        ],
+        "correct": "ludojop_top",
+    },
+    {
+        "id": "german_nickname",
+        "question": "Что НЕ является прозвищем Германа Василенко?",
+        "options": [
+            ("watermelon", "Арбуз"),
+            ("jerry_berry", "Джери Бери"),
+            ("german_apple", "Герман Яблоко"),
+            ("sportik", "Спортик"),
+        ],
+        "correct": "sportik",
+    },
+    {
+        "id": "markin_mother_food",
+        "question": "Где мать Анатолия Маркина прятала от него еду?",
+        "options": [
+            ("under_sink", "Под раковиной за мусорным ведром"),
+            ("under_bathtub", "Под ванной в тазике"),
+            ("under_pillow", "Под подушкой"),
+            ("store", "В магазине"),
+        ],
+        "correct": "under_sink",
+    },
+    {
+        "id": "moskalev_hamon",
+        "question": "Какую часть тела Максима Москалева называли хамоновой?",
+        "options": [
+            ("leg", "Нога"),
+            ("arm", "Рука"),
+            ("ear", "Ухо"),
+            ("whole_body", "Все тело"),
+        ],
+        "correct": "leg",
+    },
+    {
+        "id": "spirin_female_persona",
+        "question": "Какое имя у женской суб-личности Владимира Спирина?",
+        "options": [
+            ("oksana", "Оксана"),
+            ("elena", "Елена"),
+            ("snezhanna", "Снежанна"),
+            ("veronika", "Вероника"),
+        ],
+        "correct": "oksana",
+    },
+    {
+        "id": "vaytovich_female_persona",
+        "question": "Какое имя у женской суб-личности Константина Вайтовича?",
+        "options": [
+            ("lyudmila", "Людмила"),
+            ("ekaterina", "Екатерина"),
+            ("inna", "Инна"),
+            ("irina", "Ирина"),
+        ],
+        "correct": "lyudmila",
+    },
+    {
+        "id": "saveliev_female_persona",
+        "question": "Какое имя у женской суб-личности Влада Савельева?",
+        "options": [
+            ("miss_sisi", "Мисс Сиси"),
+            ("mrs_marble", "Миссис Марбл"),
+            ("kisi_pisi", "Киси Писи"),
+            ("miss_lily", "Мисс Лили"),
+        ],
+        "correct": "miss_sisi",
+    },
+    {
+        "id": "olisia_nationality",
+        "question": "Какой национальности кошко-девочка Олисия?",
+        "options": [
+            ("tajik", "Таджик"),
+            ("uzbek", "Узбек"),
+            ("russian", "Русский"),
+            ("shue", "ШУЕ"),
+        ],
+        "correct": "tajik",
+    },
+    {
+        "id": "goose_surname_origin",
+        "question": "От какого слова происходит фамилия Гуся?",
+        "options": [
+            ("soup", "Суп"),
+            ("tup", "Туп"),
+            ("shit", "Дерьмо"),
+            ("goose", "Гусь"),
+        ],
+        "correct": "soup",
+    },
+    {
+        "id": "oral_pleasures",
+        "question": "Как называют оральные утехи в нижнем интернете?",
+        "options": [
+            ("abuga", "Абуга"),
+            ("minchik", "Минчик"),
+            ("bugaga", "Бугага"),
+            ("mur_mur", "Мур-мур"),
+        ],
+        "correct": "abuga",
+    },
+    {
+        "id": "wake_sleepers",
+        "question": "Как в нижнем интернете принято будить спящих?",
+        "options": [
+            ("baptism", "Крещение"),
+            ("abuga", "Абуга"),
+            ("kind_words", "Добрые слова"),
+            ("alarm_clock", "Будильник"),
+        ],
+        "correct": "baptism",
+    },
+    {
+        "id": "baptism_meaning",
+        "question": "Что такое «крещение» в нижнем интернете?",
+        "options": [
+            ("pour_liquid", "Обливание жидкостью"),
+            ("draw_cross", "Нарисовать на человеке крест"),
+            ("read_prayer", "Прочитать молитву"),
+            ("abuga", "Сделать абугу"),
+        ],
+        "correct": "pour_liquid",
+    },
+    {
+        "id": "spirin_requests",
+        "question": "Что Владимир Спирин любит выпрашивать у людей?",
+        "options": [
+            ("snot", "Сопли"),
+            ("nudes", "Нюдсы"),
+            ("voice_messages", "Голосовые"),
+            ("money", "Деньги"),
+        ],
+        "correct": "snot",
+    },
 ]
 
 TITLE_RANGES = (
