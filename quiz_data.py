@@ -351,6 +351,72 @@ QUESTIONS = [
         ],
         "correct": "onions",
     },
+    {
+        "id": "red_demon",
+        "question": "Кого называют \"рыжый демон\"?",
+        "options": [
+            ("kirill_zyryanova", "Кирилл Зырянова"),
+            ("kirill_pyryanov", "Кирилл Пырянов"),
+            ("nikita_gnusov", "Никита Гнусов"),
+            ("pavel_menshikov", "Павел Меньшиков"),
+        ],
+        "correct": "kirill_zyryanova",
+    },
+    {
+        "id": "valentin_not_call",
+        "question": "Как НЕ называл себя Валентин Владимирович? ",
+        "options": [
+            ("mama", "Мама"),
+            ("megaphone", "Мегафон"),
+            ("berta", "Берта"),
+            ("nadya", "Надя"),
+        ],
+        "correct": "nadya",
+    },
+    {
+        "id": "dmitry_nickname",
+        "question": "Что НЕ является прозвищем Дмитрия Горликова?",
+        "options": [
+            ("cow", "Корова"),
+            ("hump", "Горб"),
+            ("moon_rover", "Луноход"),
+            ("pudge", "Пудж"),
+        ],
+        "correct": "pudge",
+    },
+    {
+        "id": "seo_optimizer_group",
+        "question": "Как называлось знаменитое объединение оптимизаторов?",
+        "options": [
+            ("seo_gigantos", "Сео Гигантос"),
+            ("seo_gyros", "Сео Гирос"),
+            ("piligrimos", "Пилигримос"),
+            ("apple", "Яблоко"),
+        ],
+        "correct": "seo_gyros",
+    },
+    {
+        "id": "saveliev_matchmaking",
+        "question": "Как назывался процесс поиска второй половинки для Влада Савельева?",
+        "options": [
+            ("zhenatoria", "Женатория"),
+            ("romantoria", "Романтория"),
+            ("shuetoria", "ШУЕтория"),
+            ("scam", "Скам"),
+        ],
+        "correct": "zhenatoria",
+    },
+    {
+        "id": "konstantin_not_nickname",
+        "question": "Что НЕ является прозвищем Константина Вайтовича?",
+        "options": [
+            ("hydronaut", "Гидронавт"),
+            ("chipsoed", "Чипсоед"),
+            ("bluewhite", "Блювайт"),
+            ("vaytik", "Вайтик"),
+        ],
+        "correct": "vaytik",
+    },
 ]
 
 TITLE_RANGES = (
