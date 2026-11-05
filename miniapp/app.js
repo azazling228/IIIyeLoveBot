@@ -629,12 +629,39 @@
         ${profile.quiz_percent !== null && profile.quiz_percent !== undefined
           ? `<p class="profile-quiz-rating">♛ Рейтинг теста: ${profile.quiz_percent}%</p>`
           : ""}
+        <div class="public-profile-actions">
+          <button class="secondary-button" id="block-public-profile" type="button">🚫 Заблокировать</button>
+          <button class="secondary-button" id="report-public-profile" type="button">⚠️ Пожаловаться</button>
+        </div>
       </section>`;
     loadGalleryPhotos();
     document.getElementById("close-public-profile").addEventListener(
       "click",
       () => loadTab(state.tab),
     );
+    document.getElementById("block-public-profile").addEventListener(
+      "click",
+      () => runAction(() => blockPublicProfile(profile.id)),
+    );
+    document.getElementById("report-public-profile").addEventListener(
+      "click",
+      () => runAction(() => reportPublicProfile(profile.id)),
+    );
+  }
+
+  async function blockPublicProfile(profileId) {
+    if (!await confirmAction("Заблокировать этого пользователя? Его анкеты и сообщения больше не будут доступны.")) {
+      return;
+    }
+    await api(`/api/profiles/${profileId}/block`, { method: "POST" });
+    showToast("Пользователь заблокирован");
+    await loadTab(state.tab);
+  }
+
+  async function reportPublicProfile(profileId) {
+    if (!await confirmAction("Отправить жалобу на эту анкету модератору?")) return;
+    await api(`/api/profiles/${profileId}/report`, { method: "POST" });
+    showToast("Жалоба отправлена модератору");
   }
 
   async function loadChats() {

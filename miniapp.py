@@ -18,6 +18,10 @@ from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboar
 
 from database import (
     add_like,
+    add_block,
+    add_report,
+    is_report_notified,
+    mark_report_notified,
     add_message,
     add_skip,
     add_view,
@@ -709,6 +713,38 @@ def create_miniapp_app(bot, bot_token, admin_id=None):
             return _json_error("Profile not found.", 404)
         return web.json_response({"profile": _profile_payload(profile, admin_id)})
 
+    async def profile_action(request):
+        user_id = request["telegram_id"]
+        try:
+            profile_id = int(request.match_info["profile_id"])
+        except ValueError:
+            return _json_error("Profile not found.", 404)
+        if profile_id == user_id or not get_user(profile_id):
+            return _json_error("Profile not found.", 404)
+        action = request.match_info["action"]
+        if action == "block":
+            add_block(user_id, profile_id)
+            return web.json_response({"blocked": True})
+        if action == "report":
+            report_created = add_report(user_id, profile_id)
+            if not report_created or is_report_notified(user_id, profile_id):
+                return web.json_response({"reported": True, "already_reported": True})
+            if admin_id:
+                try:
+                    reporter = get_user(user_id)
+                    reported = get_user(profile_id)
+                    await bot.send_message(
+                        admin_id,
+                        "⚠️ Жалоба на анкету\n\n"
+                        f"Отправитель ID {user_id}: {reporter['name'][:100]}\n"
+                        f"Анкета ID {profile_id}: {reported['name'][:100]}",
+                    )
+                    mark_report_notified(user_id, profile_id)
+                except TelegramAPIError:
+                    logging.exception("Failed to notify admin about Mini App report")
+            return web.json_response({"reported": True})
+        return _json_error("Unknown profile action.", 404)
+
     async def discover_decision(request):
         user_id = request["telegram_id"]
         try:
@@ -1154,6 +1190,7 @@ def create_miniapp_app(bot, bot_token, admin_id=None):
     app.router.add_post("/api/discover/decision", discover_decision)
     app.router.add_get("/api/profiles/{profile_id}/photo", profile_photo)
     app.router.add_get("/api/profiles/{profile_id}/photos/{photo_index}", profile_photo)
+    app.router.add_post("/api/profiles/{profile_id}/{action}", profile_action)
     app.router.add_get("/api/profiles/{profile_id}", public_profile)
     app.router.add_get("/api/likes", incoming_likes)
     app.router.add_post("/api/likes/respond", respond_to_like)
